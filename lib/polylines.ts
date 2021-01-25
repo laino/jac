@@ -1,8 +1,40 @@
 
 import {abcLine, lineEq, dL, Point, cmpSign, intersection, triArea} from './math';
 
-export function simplifyPolyline(line: Point[]) {
+export interface SimplifyOptions {
+    maxPoints: number,
+}
 
+export interface SimplifyResult {
+    displacement: number
+}
+
+export function simplifyPolyline(line: Point[], options: SimplifyOptions): SimplifyResult {
+    const result: SimplifyResult = {
+        displacement: 0
+    };
+
+    // TODO: this can be optimized
+    while (line.length > options.maxPoints) {
+        let best: (Placement & {i: number}) = null;
+
+        for (let i = 0; i < line.length - 3; i++) {
+            const {point, displacement} = placement(line[i], line[i+1], line[i+2], line[i+3])
+
+            if (!best || displacement < best.displacement) {
+                best = {i,point, displacement};
+            }
+        }
+
+        if (!best) {
+            break;
+        }
+
+        result.displacement += best.displacement;
+        line.splice(best.i + 1, 2, best.point);
+    }
+
+    return result;
 }
 
 export interface Placement {
