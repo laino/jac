@@ -1,4 +1,6 @@
 
+import * as polylines from 'polylines';
+
 export type JapValue = number;
 
 export interface JapData {
@@ -25,27 +27,61 @@ export class JapPlot {
     }
     
     public insert(value: JapValue, num: number) {
-        const newData: JapDataPoint[] = [];
+        const data = this.data;
+        
+        let start = 1 + this.splicePoint(value);
+        let end = this.splicePoint(value + 1);
 
-        for (const point of this.data) {
-            newData.push(point);
-
-            if (point.x < value) {
-                newData.push({x: value, y: num});
-            }
+        for (; start <= end; start++) {
+            data[start].y += num;
         }
 
-        this.data = newData;
+        return this.simplify();
+    }
 
-        this.simplify();
+    private splicePoint(value: JapValue) {
+        const data = this.data;
+
+        if (data.length === 0 || data[0].x > value) {
+            data.unshift({x: value, y: 0}, {x: value, y: 0});
+            return 0;
+        }
+
+        for (let i = 1; i < data.length; i++) {
+            const next = data[i];
+
+            if (next.x < value) {
+                continue;
+            }
+
+            const prev = data[i - 1];
+            
+            if (next.x === prev.x) {
+                return i - 1;
+            }
+
+            if (i + 1 < data.length && data[i + 1].x === next.x) {
+                return i;
+            }
+
+            const y = prev.y + ((next.y - prev.y) / (next.x - prev.x) * (value - prev.x));
+            
+            data.splice(i, 0,
+                {x: value, y: y},
+                {x: value, y: y}
+            );
+
+            return i;
+        }
+
+        return data.push(
+            {x: value, y: 0},
+            {x: value, y: 0}
+        ) - 2;
     }
 
     private simplify() {
-        if (this.data.length < this.settings.maxPoints) {
-            return;
-        }
-
-        this.data = simplifyPolyline(this.data);
+        return polylines.simplifyPolyline(this.data, this.settings);
     }
 }
 

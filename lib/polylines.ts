@@ -14,6 +14,14 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
         displacement: 0
     };
 
+    // remove identical points
+    for (let i = 0; i < line.length - 1; i++) {
+        if (line[i].x === line[i+1].x && line[i].y === line[i+1].y) {
+            line.splice(i + 1, 1);
+            i--;
+        }
+    }
+
     // TODO: this can be optimized
     while (line.length > options.maxPoints) {
         let best: (Placement & {i: number}) = null;
@@ -29,7 +37,7 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
         if (!best) {
             break;
         }
-
+        
         result.displacement += best.displacement;
         line.splice(best.i + 1, 2, best.point);
     }
@@ -71,7 +79,7 @@ export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
 
         return {
             point: E,
-            displacement: triArea(A, B, E)
+            displacement: Math.abs(triArea(A, B, E))
         };
     }
 
@@ -139,7 +147,14 @@ export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
 //
 // Needs formal proof and a simplified calculation
 function fastDisplacement(A: Point, B: Point, C: Point, D: Point): number {
-    return Math.abs(triArea(A, D, intersection(lineEq(A, B), lineEq(C, D))));
+    const I = intersection(lineEq(A, B), lineEq(C, D));
+
+    // special case where area is 0
+    if (!I) {
+        return 0;
+    }
+
+    return Math.abs(triArea(A, D, I));
 }
 
 // Defines the line E
