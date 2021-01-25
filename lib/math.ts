@@ -1,91 +1,123 @@
-
-// Line equation in the form ax + bx + c = 0;
-export interface abcLine {
-    a: number,
-    b: number,
-    c: number,
+export interface Edge {
+    a: Point,
+    b: Point 
 }
 
 export interface Point {
     x: number,
-    y: number
+    y: number,
+    z: number,
 }
 
-export function on(A: Point, B: Point, C: Point) {
-   if (A.x == C.x) {
-       return B.x == C.x;
-   }
-   if (A.y == C.y) {
-       return B.y == C.y;
-   }
+export class Mesh {
+    private points: Point[];
+    private edges: Edge[];
 
-   return (A.x - C.x)*(A.y - C.y) == (C.x - B.x)*(C.y - B.y);
-}
+    public constructor(private settings: JapSettings) {
+    }
 
-// Signed distance of the line BC to A
-export function d(A: Point, B: Point, C: Point) {
-    return ((C.x - B.x) * (B.y - A.y) - (C.y - B.y) * (B.x - A.x)) /
-            Math.sqrt(Math.pow(C.x - B.x, 2) + Math.pow(C.y - B.y, 2));
-}
+    public spliceRect(x: number, y: number, x2: number, y2: number) {
+        const points = this.points;
+        const edges = this.edges;
 
-// Signed distance of the line L to A
-export function dL(A: Point, L: abcLine) {
-    return (L.a * A.x + L.b * A.y + L.c) / Math.sqrt(L.a * L.a + L.b * L.b);
-}
+        const pointsInside: Point[] = [];
+        
+        const corners = [
+            {x: x, y: y, z: 0},
+            {x: x2, y: y, z: 0},
+            {x: x2, y: y2, z: 0},
+            {x: x, y: y2, z: 0}
+        ];
 
-export function lineEq(A: Point, B: Point): abcLine {
-    return {
-        a: A.y - B.y,
-        b: B.x - A.x,
-        c: A.x * B.y - B.x * A.y
-    };
-}
+        const cornerEdges = [
+            corners[0], corners[1],
+            corners[1], corners[2],
+            corners[3], corners[4],
+            corners[4], corners[0]
+        ];
 
-export function triArea(A: Point, B: Point, C: Point) {
-    return (A.x * (B.y - C.y) + B.x * (C.y - A.y) + C.x * (A.y - B.y)) / 2;
-}
+        for (const point of points) {
+            if (point.x <= x || point.x >= x2 || point.y <= y || point.y >= y2) {
+                continue;
+            }
 
-export function intersection(A: abcLine, B: abcLine) {
-    const d = (A.b*B.a-A.a*B.b);
+            pointsInside.push(point);
+        }
+        
+        for (const corner of corners) {
+            corner.z = this.sample(corner.x, corner.y);
+        }
 
-    if (d === 0) {
+        for (let i = 0; i < cornerEdges.length; i++) {
+
+        }
+    }
+
+    public sample(x: number, y: number): number {
+        const triangle = this.triangleAt(x, y);
+    }
+
+    private triangleAt(x: number, y: number) {
+        const edges = this.edges;
+
+        const cEdges: Edge[] = [];
+
+        for (const edge of edges) {
+            if (onLine(x, edge.a.x, edge.b.x) || onLine(y, edge.a.y, edge.b.y)) {
+                for (const edge2 of cEdges) {
+                    if ((edge.a === edge2.a) || (edge.b === edge2.a)) {
+                        const {u,v} = uv(x, y, edge.a, edge.b, edge2.b);
+
+                        if ((u >= 0) && (v >= 0) && (u + v < 1)) {
+                            return {u, v, a: edge.a, b: edge.b, c: edge2.b};
+                        }
+                    }
+
+                    if ((edge.b === edge2.b) || (edge.a === edge2.b)) {
+                        const {u,v} = uv(x, y, edge.a, edge.b, edge2.a);
+
+                        if ((u >= 0) && (v >= 0) && (u + v < 1)) {
+                            return {u, v, a: edge.a, b: edge.b, c: edge2.a};
+                        }
+                    }
+                }
+
+                cEdges.push(edge);
+            }
+        }
+
         return null;
     }
-
-    const x = (A.c*B.b-A.b*B.c) / d;
-    const y = (A.a*B.c-A.c*B.a) / d;
-
-    return {
-        x,
-        y,
-    };
 }
 
-export function cmpSign(a: number, b: number) {
-    return (a < 0) === (b < 0);
+export function uv(x: number, y: number, A: Point, B: Point, C: Point) {
+    const v0x = C.x - A.x;
+    const v0y = C.y - A.y;
+    
+    const v1x = B.x - A.x;
+    const v1y = B.y - A.y;
+    
+    const v2x = x - A.x;
+    const v2y = y - A.y;
+    
+    const dot00 = v0x * v0x + v0y * v0y;
+    const dot01 = v0x * v1x + v0y * v1y;
+    const dot02 = v0x * v2x + v0y * v2y;
+    const dot11 = v1x * v1x + v1y * v1y;
+    const dot12 = v1x * v2x + v1y * v2y;
+
+    const invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+
+    const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    const v = (dot00 * dot12 - dot01 * dot12) * invDenom;
+
+    return {u, v};
 }
 
-const PRECISION = 10; // 15 is the guaranteed amount of accurate decimal digits
-const PRECISION_N = Math.pow(10, PRECISION);
-
-export function round(num: number): number {
-    if (num === 0) {
-        return 0;
+function onLine(p, a, b) {
+    if (a > b) {
+        return p >= b && p <= a;
     }
-
-    if (num > PRECISION_N) {
-        return Math.round(num);
-    }
-
-    const abs = Math.abs(num);
-
-    let m = PRECISION - 1;
-
-    if (abs > 1) {
-        m -= Math.floor(Math.log10(abs));
-    }
-
-    const n = Math.pow(10, m);
-
-    return Math.round(num * n + Number.EPSILON) / n;
+        
+    return p >= a && p <= b;
 }

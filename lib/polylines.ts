@@ -16,8 +16,7 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
         displacement: 0
     };
 
-    // TODO: this can be optimized
-    while (line.length > options.maxPoints) {
+    do {
         // remove superfluous points
         for (let i = 0; i < line.length - 1; i++) {
             const B = line[i];
@@ -26,7 +25,6 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
             if (B.x === C.x && B.y === C.y || (i > 1 && on(line[i - 1], B, C))) {
                 line.splice(i, 1);
                 i--;
-                continue;
             }
         }
 
@@ -52,13 +50,6 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
                 continue;
             }
             
-            /*
-            if (options.orderedX && (point.x < A.x || point.x > D.x)) {
-                console.log(A,B,C,D,point);
-                continue;
-            }
-            */
-        
             if (!best || displacement < best.displacement) {
                 best = {i,point, displacement};
             }
@@ -71,7 +62,7 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
         result.displacement += best.displacement;
            
         line.splice(best.i + 1, 2, best.point);
-    }
+    } while (line.length > options.maxPoints);
 
     return result;
 }
@@ -98,10 +89,16 @@ export function placementOrdered(A: Point, B: Point, C: Point, D: Point): Placem
         x: (A.x + D.x) / 2 + (h * (A.y - D.y)) / d,
         y: (A.y + D.y) / 2 + (h * (D.x - A.x)) / d
     };
+    
+    // Wacky displacement function. 
+    // Replace with function calculating actual displacement area.
+    const AD = lineEq(A, D);
+    const dBAD = dL(B, AD);
+    const dCAD = dL(C, AD);
 
     return {
         point: H,
-        displacement: displacement(A, B, C, D, H)
+        displacement: (dBAD + dCAD) - h
     };
 }
 
@@ -194,8 +191,6 @@ function fastDisplacement(A: Point, B: Point, C: Point, D: Point): number {
     return Math.abs(triArea(A, D, I));
 }
 
-// Wacky displacement function. 
-// Replace with function calculating actual displacement area.
 function displacement(A: Point, B: Point, C: Point, D: Point, E: Point): number {
     return (Math.sqrt(Math.pow(B.x - E.x, 2) + Math.pow(B.y - E.y, 2)) +
            Math.sqrt(Math.pow(C.x - E.x, 2) + Math.pow(C.y - E.y, 2))) *
