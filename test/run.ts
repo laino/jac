@@ -10,18 +10,20 @@ function p(x: number, y: number) {
     return {x, y};
 }
 
-/*const line = [
-    p(0, 10),
-    p(1, 20),
-    p(2, 10),
-    p(3, 20)
+const line = [
+    p(0, 0),
+    p(0, 1),
+    p(1, 1),
+    p(1, 0)
 ];
 
-polylines.simplifyPolyline(line, {maxPoints: 3});
-*/
+polylines.simplifyPolyline(line, {
+    maxPoints: 3,
+    orderedX: true
+});
 
 const plot = new jap.JapPlot({
-    maxPoints: 12,
+    maxPoints: 50,
     positiveY: true
 });
 

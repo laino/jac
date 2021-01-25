@@ -42,7 +42,8 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
             const C = line[i+2];
             const D = line[i+3];
 
-            const {point, displacement} = placement(A, B, C, D);
+            const {point, displacement} = 
+                options.orderedX ? placementOrdered(A, B, C, D) : placement(A, B, C, D);
 
             point.x = round(point.x);
             point.y = round(point.y);
@@ -51,11 +52,14 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
                 continue;
             }
             
+            /*
             if (options.orderedX && (point.x < A.x || point.x > D.x)) {
+                console.log(A,B,C,D,point);
                 continue;
             }
+            */
         
-            if (!best || displacement > best.displacement) {
+            if (!best || displacement < best.displacement) {
                 best = {i,point, displacement};
             }
         }
@@ -80,10 +84,36 @@ export interface Placement {
 /*
  * Based on:
  *
+ * Tutić, D., & Lapaine, M. (2009).
+ * Area preserving cartographic line generalization.
+ * Journal of the Croatian Cartographic Society,8(11), 84–100.
+ */
+export function placementOrdered(A: Point, B: Point, C: Point, D: Point): Placement {
+    const El = Eline(A, B, C, D);
+    const h = dL(A, El);
+
+    const d = Math.sqrt(Math.pow(D.x - A.x, 2) + Math.pow(D.y - A.y, 2));
+
+    const H = {
+        x: (A.x + D.x) / 2 + (h * (A.y - D.y)) / d,
+        y: (A.y + D.y) / 2 + (h * (D.x - A.x)) / d
+    };
+
+    return {
+        point: H,
+        displacement: displacement(A, B, C, D, H)
+    };
+}
+
+/*
+ * Based on:
+ *
  * Kronenfeld, B. J., Stanislawski, L. V., Buttenfield, B. P., & Brockmeyer, T. (2019).
  * Simplification of polylines by segment collapse: minimizing areal displacement while preserving area.
  * International Journal of Cartography, 1–25.
  * doi:10.1080/23729333.2019.1631535
+ *
+ * Note that this function has some problems when ACD or ABD are in a straight line.
  */
 export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
     const AD = lineEq(A, D);
@@ -120,18 +150,18 @@ export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
             x: (iAB.x + iCD.x) / 2,
             y: (iAB.y + iCD.y) / 2,
         };
-
+        
         return {
             point: E,
             displacement: fastDisplacement(A, iCD, C, B)
         };
     }
 
-    if (dBAD > 0 && (cmpSign(dBAD, dCAD) && (dBAD > dCAD === (dBAD > 0)) || cmpSign(dBAD, h))) {
+    if (cmpSign(dBAD, dCAD) && (dBAD > dCAD === (dBAD > 0)) || cmpSign(dBAD, h)) {
         // B and C are on the same side and B is further out, or
         // B and E are on the same side
         const E = intersection(El, lineEq(A, B));
-
+        
         return {
             point: E,
             displacement: fastDisplacement(D, E, B, C)
@@ -141,7 +171,7 @@ export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
     // B and C are on the same side and C is further out, or
     // C and E are on the same side
     const E = intersection(El, lineEq(C, D));
-
+    
     return {
         point: E,
         displacement: fastDisplacement(A, E, C, B)
@@ -162,6 +192,18 @@ function fastDisplacement(A: Point, B: Point, C: Point, D: Point): number {
     }
 
     return Math.abs(triArea(A, D, I));
+}
+
+// Wacky displacement function. 
+// Replace with function calculating actual displacement area.
+function displacement(A: Point, B: Point, C: Point, D: Point, E: Point): number {
+    return (Math.sqrt(Math.pow(B.x - E.x, 2) + Math.pow(B.y - E.y, 2)) +
+           Math.sqrt(Math.pow(C.x - E.x, 2) + Math.pow(C.y - E.y, 2))) *
+           (
+               Math.sqrt(Math.pow(A.x - B.x, 2) + Math.pow(A.y - B.y, 2)) +
+               Math.sqrt(Math.pow(C.x - B.x, 2) + Math.pow(C.y - B.y, 2)) +
+               Math.sqrt(Math.pow(C.x - D.x, 2) + Math.pow(C.y - D.y, 2))
+           );
 }
 
 // Defines the line E
