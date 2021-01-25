@@ -1,0 +1,14 @@
+{
+    "name": "jap",
+    "version": "1.0.0",
+    "scripts": {
+        "test": "node -r ./register-dev.js test/run.ts"
+    },
+    "dependencies": {
+        "typescript": ""
+    },
+    "devDependencies": {
+        "ts-node": "",
+        "tsconfig-paths" : ""
+    }
+}
