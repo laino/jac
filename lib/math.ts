@@ -11,6 +11,17 @@ export interface Point {
     y: number
 }
 
+export function on(A: Point, B: Point, C: Point) {
+   if (A.x == C.x) {
+       return B.x == C.x;
+   }
+   if (A.y == C.y) {
+       return B.y == C.y;
+   }
+
+   return (A.x - C.x)*(A.y - C.y) == (C.x - B.x)*(C.y - B.y);
+}
+
 // Signed distance of the line BC to A
 export function d(A: Point, B: Point, C: Point) {
     return ((C.x - B.x) * (B.y - A.y) - (C.y - B.y) * (B.x - A.x)) /
@@ -52,4 +63,29 @@ export function intersection(A: abcLine, B: abcLine) {
 
 export function cmpSign(a: number, b: number) {
     return (a < 0) === (b < 0);
+}
+
+const PRECISION = 10; // 15 is the guaranteed amount of accurate decimal digits
+const PRECISION_N = Math.pow(10, PRECISION);
+
+export function round(num: number): number {
+    if (num === 0) {
+        return 0;
+    }
+
+    if (num > PRECISION_N) {
+        return Math.round(num);
+    }
+
+    const abs = Math.abs(num);
+
+    let m = PRECISION - 1;
+
+    if (abs > 1) {
+        m -= Math.floor(Math.log10(abs));
+    }
+
+    const n = Math.pow(10, m);
+
+    return Math.round(num * n + Number.EPSILON) / n;
 }

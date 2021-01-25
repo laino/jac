@@ -18,12 +18,16 @@ export interface JapDataPoint {
 
 export interface JapSettings {
     maxPoints: number,
+    positiveY?: boolean
 }
 
 export class JapPlot {
     public data: JapDataPoint[] = [];
 
     public constructor(private settings: JapSettings) {
+        this.settings = Object.assign({
+            orderedX: true
+        }, this.settings);
     }
     
     public insert(value: JapValue, num: number) {
@@ -78,6 +82,25 @@ export class JapPlot {
             {x: value, y: 0},
             {x: value, y: 0}
         ) - 2;
+    }
+
+    public volume(start: number, end: number) {
+        // TODO: honor start/end
+
+        const data = this.data;
+
+        let volume = 0;
+
+        for (let i = 0; i < data.length - 1; i++) {
+            const prev = data[i];
+            const next = data[i + 1];
+
+            volume += (next.x - prev.x) * (
+                Math.min(prev.y, next.y) + ((Math.max(prev.y, next.y) - Math.min(prev.y, next.y))) / 2
+            );
+        }
+
+        return volume;
     }
 
     private simplify() {

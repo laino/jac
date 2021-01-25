@@ -1,8 +1,10 @@
 
-import {abcLine, lineEq, dL, Point, cmpSign, intersection, triArea} from './math';
+import {round, abcLine, lineEq, dL, Point, cmpSign, intersection, triArea, on} from './math';
 
 export interface SimplifyOptions {
     maxPoints: number,
+    positiveY?: boolean,
+    orderedX?: boolean
 }
 
 export interface SimplifyResult {
@@ -14,22 +16,46 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
         displacement: 0
     };
 
-    // remove identical points
-    for (let i = 0; i < line.length - 1; i++) {
-        if (line[i].x === line[i+1].x && line[i].y === line[i+1].y) {
-            line.splice(i + 1, 1);
-            i--;
-        }
-    }
-
     // TODO: this can be optimized
     while (line.length > options.maxPoints) {
+        // remove superfluous points
+        for (let i = 0; i < line.length - 1; i++) {
+            const B = line[i];
+            const C = line[i+1];
+
+            if (B.x === C.x && B.y === C.y || (i > 1 && on(line[i - 1], B, C))) {
+                line.splice(i, 1);
+                i--;
+                continue;
+            }
+        }
+
+        if (line.length <= options.maxPoints) {
+            break;
+        }
+
         let best: (Placement & {i: number}) = null;
 
         for (let i = 0; i < line.length - 3; i++) {
-            const {point, displacement} = placement(line[i], line[i+1], line[i+2], line[i+3])
+            const A = line[i];
+            const B = line[i+1];
+            const C = line[i+2];
+            const D = line[i+3];
 
-            if (!best || displacement < best.displacement) {
+            const {point, displacement} = placement(A, B, C, D);
+
+            point.x = round(point.x);
+            point.y = round(point.y);
+
+            if (options.positiveY && point.y < 0) {
+                continue;
+            }
+            
+            if (options.orderedX && (point.x < A.x || point.x > D.x)) {
+                continue;
+            }
+        
+            if (!best || displacement > best.displacement) {
                 best = {i,point, displacement};
             }
         }
@@ -39,6 +65,7 @@ export function simplifyPolyline(line: Point[], options: SimplifyOptions): Simpl
         }
         
         result.displacement += best.displacement;
+           
         line.splice(best.i + 1, 2, best.point);
     }
 
@@ -100,29 +127,8 @@ export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
         };
     }
 
-    if (cmpSign(dBAD, dCAD)) {
-        // B and C are on the same side
-
-        if (dBAD > dCAD === (dBAD > 0)) {
-            // distance of B greater than distance of C
-            const E = intersection(El, lineEq(A, B));
-
-            return {
-                point: E,
-                displacement: fastDisplacement(D, E, B, C)
-            };
-        }
-
-        // distance of B smaller than distance of C
-        const E = intersection(El, lineEq(C, D));
-
-        return {
-            point: E,
-            displacement: fastDisplacement(A, E, C, B)
-        };
-    }
-
-    if (cmpSign(dBAD, h)) {
+    if (dBAD > 0 && (cmpSign(dBAD, dCAD) && (dBAD > dCAD === (dBAD > 0)) || cmpSign(dBAD, h))) {
+        // B and C are on the same side and B is further out, or
         // B and E are on the same side
         const E = intersection(El, lineEq(A, B));
 
@@ -132,6 +138,7 @@ export function placement(A: Point, B: Point, C: Point, D: Point): Placement {
         };
     }
 
+    // B and C are on the same side and C is further out, or
     // C and E are on the same side
     const E = intersection(El, lineEq(C, D));
 
