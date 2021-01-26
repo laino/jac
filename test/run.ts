@@ -1,29 +1,13 @@
 
-import * as jap from 'jap';
+import * as math from 'math';
 
-const plot = new jap.JapPlot({
-    maxPoints: 100,
-    positiveY: true
-});
+const p1 = {x: 0, y: 0, z: 0};
+const p2 = {x: 0, y: 1, z: 0};
+const p3 = {x: 1, y: 0, z: 0};
 
-let now = Date.now();
-let totalVolume = 0;
-let totalDisplacement = 0;
+const l1 = {x: 0, y: 2, z: 0};
+const l2 = {x: 2, y: 2, z: 0};
 
-for (let i = 0; i <= 1000; i++) {
-    const volume = Math.abs(5 - (i % 10));
-    const result = plot.insert(i, volume);
-    totalDisplacement += result.displacement;
-    totalVolume += volume;
-}
+console.log(math.lineUVs(l1, l2, p1, p2, p3));
 
-console.log(Date.now() - now);
-
-console.log(totalVolume, totalDisplacement);
-console.log(plot.volume(-1, 10000));
-console.log(plot.data);
-
-//import * as math from 'math';
-//import * as polylines from 'polylines';
-//console.log(math.round(-8.881784197001252e-16));
-//console.log(math.round(1.183961805967655e-14));
+//console.log(math.uv2(0, 0, p1, p2, p3));
