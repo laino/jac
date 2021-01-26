@@ -1,6 +1,7 @@
 
 const MAX_DIGITS = 15;
-const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
+//const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
+const MAX_VALUE = 500;
 
 export interface Point {
     x: number,
@@ -53,7 +54,7 @@ export function ETriangleUV(u: number, v: number, A: Point, B: Point, C: Point,
 }
 
 export class Mesh {
-    private points: Point[];
+    public points: Point[] = [];
 
     public constructor() {
         const A = Point(-MAX_VALUE, -MAX_VALUE, 0)
@@ -66,6 +67,7 @@ export class Mesh {
 
     /*
      * Add an area defined by triangle points.
+     * Its outline should have z = 0;
      */
     public add(points: Point[]) {
         // We only update the Z coordinates at the end
@@ -121,7 +123,7 @@ export class Mesh {
             for (const P of this.cutLine(B, C)) {
                 toUpdate.set(P, P.z + interpolatePoint(P, B, C));
             }
-            
+
             for (const P of this.cutLine(C, A)) {
                 toUpdate.set(P, P.z + interpolatePoint(P, C, A));
             }
@@ -129,14 +131,15 @@ export class Mesh {
     }
 
     private insertPoint(x: number, y: number) {
-        // TODO: maybe optimize for points on lines or
-        // points on points
         const t = triangleAt(x, y, this.points);
+
+        if (!t) {
+            throw new Error('point outside bounds');
+        }
+        
         const P = Point(x, y, uvz(t));
 
-        // Re-use original triangle
         this.points[t.i] = P; // P B C
-
         this.points.push(P, t.C, t.A); // P C A
         this.points.push(P, t.A, t.B); // P A B
 
@@ -162,11 +165,15 @@ export class Mesh {
 
             const P = uvPoint(t);
 
+            addPoint(P, A, B);
+
+            return P;
+        }
+        
+        function addPoint(P: Point, A: Point, B: Point) {
             result.push(P);
             lineA.push(A);
             lineB.push(B);
-
-            return P;
         }
         
         for (let i = 0; i < length; i+=3) {
@@ -185,18 +192,80 @@ export class Mesh {
             let T2: Point;
             let T3: Point;
 
-            // These onUV checks are potentially wonky
-            // with floats on edges of triangles, TODO find a better way
-            if (AB && onUV(AB)) {
-                if (AC && onUV(AC)) {
+            let cutsAB = AB ? onUV(AB) : false;
+            let cutsAC = AC ? onUV(AC) : false;
+            let cutsBC = BC ? onUV(BC) : false;
+
+            if (cutsAB && cutsAC && cutsBC) {
+                // It passes through a point and through a side
+                if (AB.u === 1) {
+                    // Cuts through A
+                    C1 = getPoint(B, C, BC);
+                    T1 = A;
+                    T2 = B;
+                    T3 = C;
+                } else if (AB.u === 0) {
+                    // Cuts through B
+                    C1 = getPoint(A, C, AC);
+                    T1 = B;
+                    T2 = C;
+                    T3 = A;
+                } else if (AC.u === 0) {
+                    // Cuts through C
+                    C1 = getPoint(A, B, AB);
+                    T1 = C;
+                    T2 = A;
+                    T3 = B;
+                }
+            
+                // Add the point we passed through
+                addPoint(T1, null, null);
+
+                points[i] = T1;
+                points[i+1] = C1;
+                points[i+2] = T2;
+
+                points.push(T1, T3, C1);
+
+                continue;
+            }
+
+            if (cutsAB) {
+                if (cutsAC) {
                     // AB -> AC
+                    
+                    if (AB.u === 1 && AC.u === 1) {
+                        // Just touches A
+                        continue;
+                    }
+
+                    if (AB.u === 0 && AC.u === 0) {
+                        // Lies on BC
+                        addPoint(B, null, null);
+                        addPoint(C, null, null);
+                        continue;
+                    }
+
                     C1 = getPoint(A, B, AB);
                     C2 = getPoint(A, C, AC);
                     T1 = A;
                     T2 = B;
                     T3 = C;
-                } else if (BC && onUV(BC)) {
+                } else if (cutsBC) {
                     // AB -> BC
+
+                    if (AB.v === 1 && BC.v === 1) {
+                        // Just touches B
+                        continue;
+                    }
+
+                    if (AB.v === 0 && BC.v === 0) {
+                        // Lies on AC
+                        addPoint(A, null, null);
+                        addPoint(C, null, null);
+                        continue;
+                    }
+
                     C1 = getPoint(A, B, AB);
                     C2 = getPoint(B, C, BC);
                     T1 = B;
@@ -205,8 +274,21 @@ export class Mesh {
                 } else {
                     continue;
                 }
-            } else if (AC && onUV(AC) && BC && onUV(BC)) {
+            } else if (cutsAC && cutsBC) {
                 // AC -> BC
+
+                if (AC.u === 0 && BC.v === 0) {
+                    // Just touches C
+                    continue;
+                }
+                    
+                if (AC.u === 1 && BC.v === 1) {
+                    // Lies on AB
+                    addPoint(A, null, null);
+                    addPoint(B, null, null);
+                    continue;
+                }
+
                 C1 = getPoint(B, C, BC);
                 C2 = getPoint(A, C, AC);
                 T1 = C;
@@ -256,7 +338,6 @@ export function triangleAtRange(x: number, y: number, points: Point[], i: number
             r = t;
             rI = i;
         }
-
     }
 
     if (r) {
@@ -283,19 +364,19 @@ export function lineUVs(P1: Point, P2: Point, A: Point, B: Point, C: Point) {
     const rW = uv2w - uv1w;
 
     // Crossing BC when u = 0
-    if (rU != 0) {
+    if (rU != 0 && Math.sign(uv1.u) !== Math.sign(uv2.u)) {
         const vBC = uv1.v - rV * (uv1.u / rU);
         BC = TriangleUV(0, vBC, A, B, C);
     }
     
     // Crossing AC when v = 0;
-    if (rV != 0) {
+    if (rV != 0 && Math.sign(uv1.v) !== Math.sign(uv2.v)) {
         const uAC = uv1.u - rU * (uv1.v / rV);
         AC = TriangleUV(uAC, 0, A, B, C);
     }
     
     // Crossing AB when w = 0;
-    if (rW != 0) {
+    if (rW != 0 && Math.sign(uv1w) !== Math.sign(uv2w)) {
         const uAB = uv1.u - rU * (uv1w / rW);
         AB = TriangleUV(uAB, 1 - uAB, A, B, C);
     }
@@ -310,10 +391,14 @@ export function lineUVs(P1: Point, P2: Point, A: Point, B: Point, C: Point) {
 }
 
 export function uv(x: number, y: number, A: Point, B: Point, C: Point): TriangleUV {
-    const det = 1 / ((B.y - C.y) * (A.x - C.x) + (C.x - B.x) * (A.y - C.y));
+    const det = ((B.y - C.y) * (A.x - C.x) + (C.x - B.x) * (A.y - C.y));
 
-    const u = ((B.y - C.y) * (x - C.x) + (C.x - B.x) * (y - C.y)) * det;
-    const v = ((C.y - A.y) * (x - C.x) + (A.x - C.x) * (y - C.y)) * det;
+    if (det === 0) {
+        return TriangleUV(0, 0, A, B, C);
+    }
+
+    const u = ((B.y - C.y) * (x - C.x) + (C.x - B.x) * (y - C.y)) / det;
+    const v = ((C.y - A.y) * (x - C.x) + (A.x - C.x) * (y - C.y)) / det;
 
     return TriangleUV(u, v, A, B, C);
 }
@@ -333,7 +418,7 @@ export function uvz({u, v, A, B, C}: TriangleUV) {
 }
 
 function onUV(t: TriangleUV) {
-    return !((t.u < 0) || (t.v < 0) || (t.u + t.v > 1));
+    return !(t.u < 0 || t.v < 0 || t.u + t.v > 1);
 }
 
 /*

@@ -8,7 +8,7 @@
     "paths": {
       "*": ["lib/*"]
     },
-    "types": [],
+    "types": ["node"],
     "sourceMap": true,
     "noImplicitAny": false,
     "suppressImplicitAnyIndexErrors": false,

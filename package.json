@@ -9,6 +9,8 @@
     },
     "devDependencies": {
         "ts-node": "",
+        "@types/node": "",
+        "canvas": "",
         "tsconfig-paths" : ""
     }
 }
