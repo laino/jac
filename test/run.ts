@@ -3,21 +3,22 @@ import * as math from 'math';
 import * as fs from 'fs';
 import {createCanvas} from 'canvas';
 
-/*const p1 = {x: 0, y: 0, z: 0};
-const p2 = {x: 0, y: 1, z: 0};
-const p3 = {x: 1, y: 0, z: 0};
+/*
+const p1 = {x: 0, y: 0, z: 0};
+const p2 = {x: 1, y: 0, z: 0};
+const p3 = {x: 2, y: 0, z: 0};
 
 const l1 = {x: 0, y: 2, z: 0};
 const l2 = {x: 2, y: 2, z: 0};
 
-console.log(math.lineUVs(l1, l2, p1, p2, p3));
+console.log(math.uv(300, 300, p1, p2, p3));
 */
 
 const m = new math.Mesh();
 
-const A = {x: 200, y: 0, z: 0};
-const B = {x: 300, y: 100, z: 0};
-const C = {x: 400, y: 0, z: 0};
+const A = {x: -250, y: -500, z: 0};
+const B = {x: 250, y: -500, z: 0};
+const C = {x: 0, y: 400, z: 0};
 
 m.add([A, B, C]);
 

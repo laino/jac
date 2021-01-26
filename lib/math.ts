@@ -3,6 +3,31 @@ const MAX_DIGITS = 15;
 //const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
 const MAX_VALUE = 500;
 
+const PRECISION = 15;
+const PRECISION_N = Math.pow(10, PRECISION);;
+
+export function round(num: number): number {
+    if (num === 0) {
+        return 0;
+    }
+
+    if (num > PRECISION_N) {
+        return Math.round(num);
+    }
+
+    const abs = Math.abs(num);
+
+    let m = PRECISION - 1;
+
+    if (abs > 1) {
+        m -= Math.floor(Math.log10(abs));
+    }
+
+    const n = Math.pow(10, m);
+
+    return Math.round(num * n + Number.EPSILON) / n;
+}
+
 export interface Point {
     x: number,
     y: number,
@@ -41,16 +66,16 @@ export function Point(x: number, y: number, z: number): Point {
 }
 
 export function TriangleUV(u: number, v: number, A: Point, B: Point, C: Point): TriangleUV {
-    return {u, v, A, B, C};
+    return {u: round(u), v: round(v), A, B, C};
 }
 
 export function TriangleUVi(u: number, v: number, i: number, A: Point, B: Point, C: Point): TriangleUVi {
-    return {u, v, A, B, C, i};
+    return {u: round(u), v: round(v), A, B, C, i};
 }
 
 export function ETriangleUV(u: number, v: number, A: Point, B: Point, C: Point,
                             AB: Edge, BC: Edge, CA: Edge): ETriangleUV {
-    return {u, v, A, B, C, AB, BC, CA};
+    return {u: round(u), v: round(v), A, B, C, AB, BC, CA};
 }
 
 export class Mesh {
@@ -171,6 +196,9 @@ export class Mesh {
         }
         
         function addPoint(P: Point, A: Point, B: Point) {
+            if (!P) {
+                throw new Error('wat');
+            }
             result.push(P);
             lineA.push(A);
             lineB.push(B);
@@ -334,7 +362,7 @@ export function triangleAtRange(x: number, y: number, points: Point[], i: number
     for (;i < length; i+=3) {
         const t = uv(x, y, points[i], points[i + 1], points[i + 2]);
 
-        if (onUV(t) && (!r || uvz(t) > uvz(r))) {
+        if (t && onUV(t) && (!r || uvz(t) >= uvz(r))) {
             r = t;
             rI = i;
         }
@@ -348,37 +376,45 @@ export function triangleAtRange(x: number, y: number, points: Point[], i: number
 }
 
 export function lineUVs(P1: Point, P2: Point, A: Point, B: Point, C: Point) {
-    const uv1 = uv(P1.x, P1.y, A, B, C);
-    const uv2 = uv(P2.x, P2.y, A, B, C);
-
-    const uv1w = 1 - uv1.u - uv1.v;
-    const uv2w = 1 - uv2.u - uv2.v;
-
     let BC: TriangleUV;
     let AC: TriangleUV;
     let AB: TriangleUV;
 
-    // Parallel if these are 0
-    const rU = uv2.u - uv1.u;
-    const rV = uv2.v - uv1.v;
-    const rW = uv2w - uv1w;
+    let uv1: TriangleUV;
+    let uv2: TriangleUV;
 
-    // Crossing BC when u = 0
-    if (rU != 0 && Math.sign(uv1.u) !== Math.sign(uv2.u)) {
-        const vBC = uv1.v - rV * (uv1.u / rU);
-        BC = TriangleUV(0, vBC, A, B, C);
-    }
-    
-    // Crossing AC when v = 0;
-    if (rV != 0 && Math.sign(uv1.v) !== Math.sign(uv2.v)) {
-        const uAC = uv1.u - rU * (uv1.v / rV);
-        AC = TriangleUV(uAC, 0, A, B, C);
-    }
-    
-    // Crossing AB when w = 0;
-    if (rW != 0 && Math.sign(uv1w) !== Math.sign(uv2w)) {
-        const uAB = uv1.u - rU * (uv1w / rW);
-        AB = TriangleUV(uAB, 1 - uAB, A, B, C);
+    uv1 = uv(P1.x, P1.y, A, B, C);
+
+    if (uv1) {
+        uv2 = uv(P2.x, P2.y, A, B, C);
+
+        if (uv2) {
+            const uv1w = 1 - uv1.u - uv1.v;
+            const uv2w = 1 - uv2.u - uv2.v;
+
+            // Parallel if these are 0
+            const rU = uv2.u - uv1.u;
+            const rV = uv2.v - uv1.v;
+            const rW = uv2w - uv1w;
+
+            // Crossing BC when u = 0
+            if (rU != 0 && Math.sign(uv1.u) !== Math.sign(uv2.u)) {
+                const vBC = uv1.v - rV * (uv1.u / rU);
+                BC = TriangleUV(0, vBC, A, B, C);
+            }
+            
+            // Crossing AC when v = 0;
+            if (rV != 0 && Math.sign(uv1.v) !== Math.sign(uv2.v)) {
+                const uAC = uv1.u - rU * (uv1.v / rV);
+                AC = TriangleUV(uAC, 0, A, B, C);
+            }
+            
+            // Crossing AB when w = 0;
+            if (rW != 0 && Math.sign(uv1w) !== Math.sign(uv2w)) {
+                const uAB = uv1.u - rU * (uv1w / rW);
+                AB = TriangleUV(uAB, 1 - uAB, A, B, C);
+            }
+        }
     }
 
     return {
@@ -394,7 +430,7 @@ export function uv(x: number, y: number, A: Point, B: Point, C: Point): Triangle
     const det = ((B.y - C.y) * (A.x - C.x) + (C.x - B.x) * (A.y - C.y));
 
     if (det === 0) {
-        return TriangleUV(0, 0, A, B, C);
+        return null;
     }
 
     const u = ((B.y - C.y) * (x - C.x) + (C.x - B.x) * (y - C.y)) / det;
