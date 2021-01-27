@@ -16,15 +16,15 @@ console.log(math.uv(300, 300, p1, p2, p3));
 
 const m = new math.Mesh();
 
-const A = {x: 100, y: 100, z: 200};
-const B = {x: 100, y: 200, z: 0};
-const C = {x: 200, y: 100, z: 0};
+const A = {x: 100, y: 0, z: 200};
+const B = {x: 100, y: 100, z: 0};
+const C = {x: 200, y: 0, z: 0};
 
 m.add([A, B, C]);
 
-const A2 = {x: 150, y: 100, z: 200};
-const B2 = {x: 150, y: 200, z: 0};
-const C2 = {x: 250, y: 100, z: 0};
+const A2 = {x: 30, y: -20, z: 200};
+const B2 = {x: 30, y: 70, z: 100};
+const C2 = {x: 180, y: -30, z: 0};
 
 m.add([A2, B2, C2]);
 
@@ -74,7 +74,7 @@ function draw(points: math.Point[]) {
     }
     */
         
-    c.lineWidth = 5;
+    c.lineWidth = 3;
 
     const lines: number[][][] = [];
     const edges: number[][] = [];
@@ -96,7 +96,7 @@ function draw(points: math.Point[]) {
     function drawEdge([x,y,z]: number[]) {
         c.fillStyle = `rgba(${z.toFixed(0)}, ${(255 - z).toFixed(0)}, 0, 1)`;
         c.beginPath();
-        c.arc(x, y, 10, 0, Math.PI * 2);
+        c.arc(x, y, 5, 0, Math.PI * 2);
         c.closePath();
         c.fill();
     }
