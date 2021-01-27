@@ -26,11 +26,38 @@ const A2 = {x: 30, y: -20, z: 200};
 const B2 = {x: 30, y: 70, z: 100};
 const C2 = {x: 180, y: -30, z: 0};
 
-m.add([A2, B2, C2]);
+//m.add([A2, B2, C2]);
 
-console.log(m.points.length / 3);
+m.simplify({
+    maxPoints: 100,
+    maxTriangles: 100
+});
 
-fs.writeFileSync('/tmp/out.png', draw(m.points));
+/*
+const V1 = {x: 0, y: 0, z: 1};
+const V2 = {x: 1, y: 0, z: 1};
+const V3 = {x: 1, y: 1, z: (2 * 2 + 1 * 0.5) / 2.5};
+
+const V4 = {x: 1, y: 1, z: (2 * 2 + 1 * 0.5) / 2.5};
+const V5 = {x: 3, y: 1, z: 2};
+const V6 = {x: 3, y: 3, z: 2};
+
+console.log(math.volume(V1, V2, V3));
+console.log(math.volume(V4, V5, V6));
+console.log(math.volume(V4, V5, V6) + math.volume(V1, V2, V3));
+*/
+
+fs.writeFileSync('/tmp/out.png', draw(m.getPoints(false)));
+
+const points = m.getPoints(true);
+
+let vol = 0;
+
+for (let i = 0; i < points.length; i+=3) {
+    vol += math.volume(points[i], points[i+1], points[i+2]);
+}
+
+console.log("Total Volume:", vol);
 
 function draw(points: math.Point[]) {
     const canvas = createCanvas(1200, 1200);
@@ -119,7 +146,7 @@ function draw(points: math.Point[]) {
             [B.x / scale, -B.y / scale, B.z],
             [C.x / scale, -C.y / scale, C.z]
         ];
-        
+
         for (let i2 = 0; i2 < 3; i2++) {
             addLine(edges[i2], edges[(i2+1) % 3]);
         }

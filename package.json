@@ -5,11 +5,13 @@
         "test": "node -r ./register-dev.js test/run.ts"
     },
     "dependencies": {
-        "typescript": ""
+        "typescript": "",
+        "kdbush": ""
     },
     "devDependencies": {
         "ts-node": "",
         "@types/node": "",
+        "@types/kdbush": "",
         "canvas": "",
         "tsconfig-paths" : ""
     }

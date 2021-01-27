@@ -1,10 +1,13 @@
 
-//const MAX_DIGITS = 15;
-//const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
-const MAX_VALUE = 500;
+import KDBush from 'kdbush';
 
-const PRECISION = 13;
+const MAX_DIGITS = 13;
+const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
+//const MAX_VALUE = 500;
+
+const PRECISION = 15;
 const PRECISION_N = Math.pow(10, PRECISION);;
+const PRECISION_D = 1 / PRECISION_N;
 
 export function round(num: number): number {
     if (num === 0) {
@@ -57,6 +60,11 @@ export interface TriangleUVi extends TriangleUV {
     i: number
 }
 
+export interface SimplifyOptions {
+    maxPoints: number,
+    maxTriangles: number
+}
+
 export function Edge(A: Point, B: Point): Edge {
     return {A, B};
 }
@@ -79,16 +87,54 @@ export function ETriangleUV(u: number, v: number, A: Point, B: Point, C: Point,
 }
 
 export class Mesh {
-    public points: Point[] = [];
+    private points: Point[];
+
+    private boundsA: Point;
+    private boundsB: Point;
+    private boundsC: Point;
+    private boundsD: Point;
 
     public constructor() {
-        const A = Point(-MAX_VALUE, -MAX_VALUE, 0)
-        const B = Point(MAX_VALUE, -MAX_VALUE, 0)
-        const C = Point(MAX_VALUE, MAX_VALUE, 0)
-        const D = Point(-MAX_VALUE, MAX_VALUE, 0)
+        this.boundsA = Point(-MAX_VALUE, -MAX_VALUE, 0)
+        this.boundsB = Point(MAX_VALUE, -MAX_VALUE, 0)
+        this.boundsC = Point(MAX_VALUE, MAX_VALUE, 0)
+        this.boundsD = Point(-MAX_VALUE, MAX_VALUE, 0)
         
-        this.points = [A, B, C, A, C, D];
+        this.points = [
+            this.boundsA, this.boundsB, this.boundsC,
+            this.boundsA, this.boundsC, this.boundsD
+        ];
     }
+
+    /*
+     * Get points 
+     */
+    public getPoints(bounds: boolean): Point[] {
+        if (bounds) {
+            return this.points.slice(0);
+        }
+
+        const result: Point[] = [];
+
+        const points = this.points;
+        const length = points.length;
+
+        bounds: for (let i = 0; i < length; i += 3) {
+            for (let i2 = 0; i2 < 3; i2++) {
+                const P = points[i + i2];
+
+                if (P === this.boundsA || P === this.boundsB || P === this.boundsC || P === this.boundsD) {
+                    continue bounds;
+                }
+            }
+
+            result.push(points[i], points[i+1], points[i+2]);
+        };
+
+        return result;
+    }
+
+
 
     /*
      * Add an area defined by triangle points.
@@ -183,6 +229,86 @@ export class Mesh {
         for (const [P, z] of insidePoints) {
             P.z = z;
         }
+    }
+
+    public simplify(options: SimplifyOptions) {
+        // TODO: collapsing lines into points,
+        // don't forget this may invalidate point collapses
+        const points = this.points;
+        const length = points.length;
+        const collapse: Collapse[] = [];
+        
+        let displacement = 0;
+        
+        const bush = new KDBush(points, (p) => p.x, (p) => p.y);
+
+        let realPoints = new Set<Point>();
+
+        for (let i = 0; i < length; i+=3) {
+            for (let i2 = 0; i2 < 3; i2++) {
+                const Pi = i + i2;
+                const P = points[Pi];
+
+                if (realPoints.has(P)) {
+                    continue;
+                }
+
+                realPoints.add(P);
+
+                const onPoint = bush.within(P.x, P.y, PRECISION_D);
+
+                for (const ni of onPoint) {
+                    if (ni <= Pi) {
+                        continue;
+                    }
+                    
+                    const N = points[ni];
+
+                    if (N === P) {
+                        continue;
+                    }
+                    
+                    if (realPoints.has(N)) {
+                        // We already compared N and P
+                        continue;
+                    }
+                    
+                    if (Math.abs(N.z - P.z) < PRECISION_D) {
+                        points[ni] = P;
+                        continue;
+                    }
+  
+                    collapse.push(calculateCollapse(points, N, P, onPoint));
+                }
+            }
+        }
+
+        collapse.sort((a, b) => a.displacement - b.displacement);
+
+        for (let i = 0; i < collapse.length; i++) {
+            if (realPoints.size <= options.maxPoints && length <= options.maxTriangles * 3) {
+                break;
+            }
+
+            const c = collapse[i];
+
+            displacement += c.displacement;
+
+            if (c.type === 0) {
+                const P = points[c.targets[0]];
+                P.z = c.z;
+
+                for (let pI of c.targets) {
+                    const N = points[pI];
+                    if (N !== P) {
+                        realPoints.delete(points[pI]);
+                    }
+                    points[pI] = P;
+                }
+            }
+        }
+
+        return {displacement};
     }
 
     private insertPoint(x: number, y: number) {
@@ -421,6 +547,54 @@ export class Mesh {
     }
 }
 
+interface CollapseBase {
+    displacement: number,
+}
+
+interface PointCollapse extends CollapseBase {
+    type: 0,
+    targets: number[],
+    z: number,
+}
+
+interface LineCollapse extends CollapseBase {
+    type: 1,
+}
+
+type Collapse = PointCollapse | LineCollapse;
+
+function calculateCollapse(points: Point[], A: Point, B: Point, list: number[]): PointCollapse {
+    const targets: number[] = [];
+
+    let areaA = 0;
+    let areaB = 0;
+
+    for (let li = 0; li < list.length; li++) {
+        const i = list[li];
+        const P = points[i];
+
+        if (P === A) {
+            const ti = i - i%3;
+            areaA += area(points[ti], points[ti+1], points[ti+2]);
+            targets.push(i);
+        } else if (P === B) {
+            const ti = i - i%3;
+            areaB += area(points[ti], points[ti+1], points[ti+2]);
+            targets.push(i);
+        }
+    }
+
+    const z = (A.z * areaA + B.z * areaB) / (areaA + areaB);
+    const displacement = Math.abs(areaA * (A.z - z));
+
+    return {
+        type: 0,
+        z,
+        displacement,
+        targets
+    };
+}
+
 export function interpolatePoint(P: Point, A: Point, B: Point) {
     const dX = A.x - B.x;
     const dY = A.y - B.y;
@@ -506,6 +680,10 @@ export function lineUVs(P1: Point, P2: Point, A: Point, B: Point, C: Point) {
         AC,
         BC
     };
+}
+
+export function volume(A: Point, B: Point, C: Point) {
+    return area(A, B, C) * (A.z + B.z + C.z) / 3;
 }
 
 export function area(A: Point, B: Point, C: Point) {
