@@ -3,7 +3,7 @@
 //const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
 const MAX_VALUE = 500;
 
-const PRECISION = 13;
+const PRECISION = 15;
 const PRECISION_N = Math.pow(10, PRECISION);;
 
 export function round(num: number): number {

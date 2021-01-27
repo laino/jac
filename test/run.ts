@@ -17,11 +17,16 @@ console.log(math.uv(300, 300, p1, p2, p3));
 const m = new math.Mesh();
 
 const A = {x: 100, y: 100, z: 200};
-const B = {x: 100, y: 200, z: 100};
-const C = {x: 200, y: 100, z: 50};
+const B = {x: 100, y: 200, z: 0};
+const C = {x: 200, y: 100, z: 0};
 
 m.add([A, B, C]);
-m.add([A, B, C]);
+
+const A2 = {x: 150, y: 100, z: 200};
+const B2 = {x: 150, y: 200, z: 0};
+const C2 = {x: 250, y: 100, z: 0};
+
+m.add([A2, B2, C2]);
 
 console.log(m.points.length / 3);
 
@@ -69,9 +74,10 @@ function draw(points: math.Point[]) {
     }
     */
         
-    c.fillStyle = 'rgba(0, 0, 255, 1)';
+    c.lineWidth = 5;
 
     const lines: number[][][] = [];
+    const edges: number[][] = [];
 
     function drawLine([x, y, z]: number[], [x2, y2, z2]: number[]) {
         const g = c.createLinearGradient(x, y, x2, y2);
@@ -80,7 +86,6 @@ function draw(points: math.Point[]) {
         g.addColorStop(1, `rgba(${z2.toFixed(0)}, ${(255 - z2).toFixed(0)}, 0, 1)`);
 
         c.strokeStyle = g;
-        c.lineWidth = (z + z2) / 50 + 2;
 
         c.beginPath();
         c.moveTo(x, y)
@@ -88,8 +93,20 @@ function draw(points: math.Point[]) {
         c.stroke();
     }
 
+    function drawEdge([x,y,z]: number[]) {
+        c.fillStyle = `rgba(${z.toFixed(0)}, ${(255 - z).toFixed(0)}, 0, 1)`;
+        c.beginPath();
+        c.arc(x, y, 10, 0, Math.PI * 2);
+        c.closePath();
+        c.fill();
+    }
+
     function addLine(a: number[], b: number[]) {
         lines.push([a, b]);
+    }
+    
+    function addEdge(e: number[]) {
+        edges.push(e);
     }
  
     for (let i = 0; i < points.length; i+=3) {
@@ -107,11 +124,8 @@ function draw(points: math.Point[]) {
             addLine(edges[i2], edges[(i2+1) % 3]);
         }
         
-        for (const [x,y] of edges) {
-            c.beginPath();
-            c.arc(x, y, 10, 0, Math.PI * 2);
-            c.closePath();
-            c.fill();
+        for (const e of edges) {
+            addEdge(e);
         }
     }
 
@@ -119,6 +133,12 @@ function draw(points: math.Point[]) {
 
     for (const [a,b] of lines) {
         drawLine(a,b);
+    }
+
+    edges.sort((a, b) => a[2] - b[2]);
+
+    for (const e of edges) {
+        drawEdge(e);
     }
 
     return canvas.toBuffer('image/png');
