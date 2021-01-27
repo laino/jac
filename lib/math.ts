@@ -1,9 +1,9 @@
 
-const MAX_DIGITS = 15;
+//const MAX_DIGITS = 15;
 //const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
 const MAX_VALUE = 500;
 
-const PRECISION = 15;
+const PRECISION = 13;
 const PRECISION_N = Math.pow(10, PRECISION);;
 
 export function round(num: number): number {
@@ -92,15 +92,15 @@ export class Mesh {
 
     /*
      * Add an area defined by triangle points.
-     * Its outline should have z = 0;
      */
     public add(points: Point[]) {
+        const cPoints = this.points;
         // We only update the Z coordinates at the end
-        const toUpdate = new Map<Point, number>();
+        const insidePoints = new Map<Point, number>();
         
         // points from the overlapping area
-        for (const P of this.points) {
-            if (toUpdate.has(P)) {
+        for (const P of cPoints) {
+            if (insidePoints.has(P)) {
                 continue;
             }
 
@@ -110,48 +110,78 @@ export class Mesh {
                 continue;
             }
 
-            toUpdate.set(P, uvz(t) + P.z);
+            insidePoints.set(P, uvz(t) + P.z);
         }
 
         const insertedPoints = new Map<Point, Point>();
 
         for (let i = 0; i < points.length; i += 3) {
-            const triA = points[i];
-            const triB = points[i+1];
-            const triC = points[i+2];
+            const ins = [
+                insertedPoints.get(points[i]),
+                insertedPoints.get(points[i+1]),
+                insertedPoints.get(points[i+2])
+            ];
 
-            let A = insertedPoints.get(triA);
-            if (!A) {
-                A = this.insertPoint(triA.x, triA.y);
-                toUpdate.set(A, A.z + triA.z);
-                insertedPoints.set(triA, A);
+            for (let i2 = 0; i2 < 3; i2++) {
+                let P = ins[i2];
+
+                if (!P) {
+                    const Ps = points[i + i2];
+                    P = ins[i2] = this.insertPoint(Ps.x, Ps.y);
+                    insidePoints.set(P, P.z + Ps.z);
+                    insertedPoints.set(Ps, P);
+                }
             }
             
-            let B = insertedPoints.get(triB);
-            if (!B) {
-                B = this.insertPoint(triB.x, triB.y);
-                toUpdate.set(B, B.z + triB.z);
-                insertedPoints.set(triB, B);
+            for (let i2 = 0; i2 < 3; i2++) {
+                const A = points[i + i2];
+                const B = points[i + (i2 + 1) % 3];
+
+                for (const P of this.cutLine(A, B)) {
+                    if (P === ins[0] || P === ins[1] || P === ins[2]) {
+                        continue;
+                    }
+
+                    insidePoints.set(P, P.z + interpolatePoint(P, A, B));
+                }
             }
+        }
+
+        const pL = cPoints.length;
+        const disconnectedPoints = new Map<Point, Point>();
+
+        // Find outline points and disconnect them
+        for (let i = 0; i < pL; i += 3) {
+            const has = [
+                insidePoints.has(cPoints[i]),
+                insidePoints.has(cPoints[i + 1]),
+                insidePoints.has(cPoints[i + 2])
+            ];
             
-            let C = insertedPoints.get(triC);
-            if (!C) {
-                C = this.insertPoint(triC.x, triC.y);
-                toUpdate.set(C, C.z + triC.z);
-                insertedPoints.set(triC, C);
+            if (has[0] && has[1] && has[2]) {
+                // The whole triangle is inside
+                continue;
             }
 
-            for (const P of this.cutLine(A, B)) {
-                toUpdate.set(P, P.z + interpolatePoint(P, A, B));
-            }
-            
-            for (const P of this.cutLine(B, C)) {
-                toUpdate.set(P, P.z + interpolatePoint(P, B, C));
-            }
+            for (let i2 = 0; i2 < 3; i2++) {
+                if (!has[i2]) {
+                    continue;
+                }
 
-            for (const P of this.cutLine(C, A)) {
-                toUpdate.set(P, P.z + interpolatePoint(P, C, A));
+                const P = cPoints[i + i2];
+                let P2 = disconnectedPoints.get(P);
+
+                if (!P2) {
+                    P2 = Point(P.x, P.y, P.z);
+                    disconnectedPoints.set(P, P2);
+                }
+
+                cPoints[i + i2] = P2;
             }
+        }
+
+        for (const [P, z] of insidePoints) {
+            P.z = z;
         }
     }
 
@@ -161,8 +191,47 @@ export class Mesh {
         if (!t) {
             throw new Error('point outside bounds');
         }
+
+        if (t.u === 1) {
+            return t.A;
+        }
         
+        if (t.v === 1) {
+            return t.B;
+        }
+        
+        if (t.u === 0 && t.v === 0) {
+            return t.C;
+        }
+
         const P = Point(x, y, uvz(t));
+
+        if (t.u === 0) {
+            // Lies on BC
+
+            this.points[t.i + 2] = P; // A B P
+            this.points.push(P, t.C, t.A); // P C A
+
+            return P;
+        }
+        
+        if (t.v === 0) {
+            // Lies on AC
+
+            this.points[t.i + 2] = P; // A B P
+            this.points.push(P, t.B, t.C); // P B C
+
+            return P;
+        }
+        
+        if (t.u + t.v === 1) {
+            // Lies on AB
+
+            this.points[t.i] = P; // P B C
+            this.points.push(t.A, P, t.C); // A P C
+
+            return P;
+        }
 
         this.points[t.i] = P; // P B C
         this.points.push(P, t.C, t.A); // P C A
@@ -179,7 +248,7 @@ export class Mesh {
         const lineA: Point[] = [];
         const lineB: Point[] = [];
 
-        // Makes sure we don't duplicate points on touching trianges
+        // Makes sure we don't duplicate points on touching triangles
         // TODO: speedups?
         function getPoint(A: Point, B: Point, t: TriangleUV) {
             for (let i = 0; i < result.length; i++) {
@@ -189,19 +258,24 @@ export class Mesh {
             }
 
             const P = uvPoint(t);
-
-            addPoint(P, A, B);
+            
+            result.push(P);
+            lineA.push(A);
+            lineB.push(B);
 
             return P;
         }
         
-        function addPoint(P: Point, A: Point, B: Point) {
-            if (!P) {
-                throw new Error('wat');
+        function addPoint(P: Point) {
+            for (let i = 0; i < result.length; i++) {
+                if (P === result[i]) {
+                    return;
+                }
             }
+        
             result.push(P);
-            lineA.push(A);
-            lineB.push(B);
+            lineA.push(null);
+            lineB.push(null);
         }
         
         for (let i = 0; i < length; i+=3) {
@@ -247,7 +321,7 @@ export class Mesh {
                 }
             
                 // Add the point we passed through
-                addPoint(T1, null, null);
+                addPoint(T1);
 
                 points[i] = T1;
                 points[i+1] = C1;
@@ -269,8 +343,8 @@ export class Mesh {
 
                     if (AB.u === 0 && AC.u === 0) {
                         // Lies on BC
-                        addPoint(B, null, null);
-                        addPoint(C, null, null);
+                        addPoint(B);
+                        addPoint(C);
                         continue;
                     }
 
@@ -289,8 +363,8 @@ export class Mesh {
 
                     if (AB.v === 0 && BC.v === 0) {
                         // Lies on AC
-                        addPoint(A, null, null);
-                        addPoint(C, null, null);
+                        addPoint(A);
+                        addPoint(C);
                         continue;
                     }
 
@@ -312,8 +386,8 @@ export class Mesh {
                     
                 if (AC.u === 1 && BC.v === 1) {
                     // Lies on AB
-                    addPoint(A, null, null);
-                    addPoint(B, null, null);
+                    addPoint(A);
+                    addPoint(B);
                     continue;
                 }
 
@@ -348,7 +422,15 @@ export class Mesh {
 }
 
 export function interpolatePoint(P: Point, A: Point, B: Point) {
-    return 0;
+    const dX = A.x - B.x;
+    const dY = A.y - B.y;
+    const dZ = A.z - B.z;
+
+    if (Math.abs(dX) > Math.abs(dY)) {
+        return A.z - dZ * (A.x - P.x) / dX;
+    }
+
+    return A.z - dZ * (A.y - P.y) / dY;
 }
 
 export function triangleAt(x: number, y: number, points: Point[]): TriangleUVi {
@@ -424,6 +506,10 @@ export function lineUVs(P1: Point, P2: Point, A: Point, B: Point, C: Point) {
         AC,
         BC
     };
+}
+
+export function area(A: Point, B: Point, C: Point) {
+    return Math.abs((A.x * (B.y - C.y) + B.x * (C.y - A.y) + C.x * (A.y - B.y)) / 2);
 }
 
 export function uv(x: number, y: number, A: Point, B: Point, C: Point): TriangleUV {
