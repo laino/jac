@@ -1,13 +1,10 @@
 
-import KDBush from 'kdbush';
-
-const MAX_DIGITS = 13;
-const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
+//const MAX_DIGITS = 13;
+//const MAX_VALUE = Math.pow(10, MAX_DIGITS - 1);
 //const MAX_VALUE = 500;
 
 const PRECISION = 15;
 const PRECISION_N = Math.pow(10, PRECISION);;
-const PRECISION_D = 1 / PRECISION_N;
 
 export function round(num: number): number {
     if (num === 0) {
@@ -30,6 +27,361 @@ export function round(num: number): number {
 
     return Math.round(num * n + Number.EPSILON) / n;
 }
+            
+export interface Point {
+    v: number,
+    d: number[]
+}
+
+export interface CloudSettings {
+    maxPoints: number
+}
+
+function Point(v: number, di: number[]) {
+    const d = [];
+
+    for (const n of di) {
+        d.push(round(n));
+    }
+
+    return {v: round(v), d};
+}
+
+export class Dimension {
+    private points: Point[] = [];
+
+
+    public constructor(public index: number) {
+    }
+    
+    public add(point: Point) {
+        this.points.push(point);
+    }
+    
+    public update() {
+        const index = this.index;
+
+        this.points.sort((a, b) => a.d[index] - b.d[index]);
+    }
+    
+    public remove(p: Point): boolean {
+        const points = this.points;
+
+        for (let i = 0; i < points.length; i++) {
+            if (points[i] === p) {
+                points.splice(i, 1);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public isBounds(p: Point) {
+        const points = this.points;
+
+        return points[0] === p || points[points.length - 1] === p;
+    }
+
+    public sample(x: number): number {
+        const index = this.index;
+        const points = this.points;
+
+        if (points[0].d[index] > x) {
+            return 0;
+        }
+        
+        if (points[points.length - 1].d[index] < x) {
+            return 0;
+        }
+
+        let i = 0;
+
+        let lX = 0;
+        let rX = 0;
+        
+        let lsum = 0;
+        let rsum = 0;
+
+        for (; i < points.length; i++) {
+            const p = points[i];
+            const v = p.d[index];
+
+            if (v <= x) {
+                lX = v;
+                break;
+            }
+        }
+
+        for (; i < points.length; i++) {
+            const p = points[i];
+            const v = p.d[index];
+
+            if (v !== lX) {
+                rX = v;
+                break;
+            }
+
+            lsum += p.v;
+        }
+        
+        for (; i < points.length; i++) {
+            const p = points[i];
+            const v = p.d[index];
+
+            if (v !== rX) {
+                break;
+            }
+
+            rsum += p.v;
+        }
+
+        const inter = (x - lX) / (rX - lX);
+
+        return lsum * (1 - inter) + rsum * inter;
+    }
+}
+
+export class Cloud {
+    private points: Point[] = [];
+    private dims: Dimension[] = [];
+    private needsUpdate = false;
+
+    public constructor(private dimensions: number, private settings: CloudSettings) {
+        for (let i = 0; i < dimensions; i++) {
+            this.dims.push(new Dimension(i));
+        }
+    }
+
+    public getPoints(): Point[] {
+        this.update();
+
+        return this.points;
+    }
+
+    public add(volume: number, d: number[]) {
+        this.needsUpdate = true;
+
+        if (volume <= 0) {
+            return;
+        }
+
+        const P = Point(volume, d);
+
+        this.points.push(P);
+        
+        for (const d of this.dims) {
+            d.add(P);
+        }
+    }
+
+    public sample(d: number[]): Point {
+        this.update();
+
+        const points = this.points;
+
+        const {sum, weights} = this.weights(d);
+
+        const wInv = sum ? (1 / sum) : 1;
+        
+        let Rd: number[];
+        let v: number = 0;
+        
+        if (sum) {
+            Rd = []
+            Rd.length = this.dimensions;
+            Rd.fill(0);
+        } else {
+            Rd = d;
+        }
+
+        for (let i = 0; i < points.length; i++) {
+            const P = points[i];
+            const w = weights[i] * wInv;
+
+            v += P.v * w;
+
+            if (sum) {
+                for (let i2 = 0; i2 < this.dimensions; i2++) {
+                    Rd[i2] += P.d[i2] * w;
+                }
+            }
+        }
+        
+        const R = Point(v, Rd);
+
+        return R;
+    }
+    
+    private simplify() {
+        const points = this.points;
+
+        let displacement = 0;
+
+        outer: do {
+            for (let i = 0; i < points.length; i++) {
+                const P = points[i];
+
+                if (this.isBounds(P)) {
+                    continue;
+                }
+
+                const {sum, weights} = this.weights(P.d, P);
+
+                if (sum === 0) {
+                    for (let i2 = points.length - 1; i2 >= 0; i2--) {
+                        if (weights[i2] !== 1) {
+                            continue;
+                        }
+
+                        const P2 = points[i2];
+
+                        P.v += P2.v;
+
+                        this.removeAt(i2);
+                    }
+                } else if (points.length > this.settings.maxPoints) {
+                    for (let i2 = points.length - 1; i2 >= 0; i2--) {
+                        const P2 = points[i2];
+                        const v = P.v * weights[i2] / sum;
+
+                        const vR = v / (v + P2.v);
+
+                        P2.v += v;
+                        
+                        for (let i3 = 0; i3 < this.dimensions; i3++) {
+                            P2.d[i3] = round((P2.d[i3] * (1 - vR) + P.d[i3] * vR));
+                        }
+                    }
+
+                    displacement += P.v;
+
+                    this.removeAt(i);
+                } else {
+                    continue;
+                }
+
+                continue outer;
+            }
+
+            break;
+        } while (points.length > this.settings.maxPoints);
+
+        return {displacement};
+    }
+    
+    
+    private update() {
+        if (!this.needsUpdate) {
+            return;
+        }
+
+        this.simplify();
+
+        this.needsUpdate = false;
+
+        for (const d of this.dims) {
+            d.update();
+        }
+
+        this.points.sort((a, b) => a.v - b.v);
+    }
+
+
+    public removeAt(i: number, n = 1) {
+        this.needsUpdate = true;
+
+        const P = this.points[i];
+
+        this.points.splice(i, n);
+
+        for (const d of this.dims) {
+            d.remove(P);
+        }
+    }
+    
+    private isBounds(P: Point) {
+        for (const d of this.dims) {
+            if (d.isBounds(P)) {
+                return true;
+            }
+        }
+    }
+
+    private weights(d: number[], exclude?: Point) {
+        const points = this.points;
+        const weights: number[] = [];
+        const pParam = 2;
+
+        let sum = 0;
+
+        let distWasZero = false;
+
+        for (const p of this.points) {
+            if (p === exclude) {
+                weights.push(0);
+                continue;
+            }
+
+            const dist = distance(p.d, d, this.dimensions);
+
+            if (dist === 0) {
+                distWasZero = true;
+                weights.push(0);
+            } else {
+                const w = 1 / Math.pow(dist, pParam);
+                weights.push(w);
+                sum += w;
+            }
+        }
+
+        if (distWasZero) {
+            sum = 0;
+
+            for (let i = 0; i < points.length; i++) {
+                if (weights[i] !== 0) {
+                    weights[i] = 0;
+                } else if (points[i] !== exclude) {
+                    weights[i] = 1;
+                }
+            }
+        }
+
+        return {
+            sum, weights
+        };
+    }    
+}
+
+function average(A: Point, B: Point, dimensions: number) {
+    const d: number[] = [];
+
+    const v = A.v + B.v;
+
+    const Ad = A.d;
+    const Bd = B.d;
+
+    const Ar = A.v / v;
+    const Br = B.v / v;
+
+    for (let i = 0; i < dimensions; i++) {
+        d.push(Ad[i] * Ar + Bd[i] * Br);
+    }
+
+    return Point(v, d);
+}
+
+function distance(A: number[], B: number[], dimensions: number) {
+    let sum = 0;
+
+    for (let i = 0; i < dimensions; i++) {
+        sum += (B[i] - A[i]) * (B[i] - A[i]);
+    }
+
+    return Math.sqrt(sum);
+}
+
+/*
 
 export interface Point {
     x: number,
@@ -85,468 +437,6 @@ export function ETriangleUV(u: number, v: number, A: Point, B: Point, C: Point,
                             AB: Edge, BC: Edge, CA: Edge): ETriangleUV {
     return {u: round(u), v: round(v), A, B, C, AB, BC, CA};
 }
-
-export class Mesh {
-    private points: Point[];
-
-    private boundsA: Point;
-    private boundsB: Point;
-    private boundsC: Point;
-    private boundsD: Point;
-
-    public constructor() {
-        this.boundsA = Point(-MAX_VALUE, -MAX_VALUE, 0)
-        this.boundsB = Point(MAX_VALUE, -MAX_VALUE, 0)
-        this.boundsC = Point(MAX_VALUE, MAX_VALUE, 0)
-        this.boundsD = Point(-MAX_VALUE, MAX_VALUE, 0)
-        
-        this.points = [
-            this.boundsA, this.boundsB, this.boundsC,
-            this.boundsA, this.boundsC, this.boundsD
-        ];
-    }
-
-    /*
-     * Get points 
-     */
-    public getPoints(bounds: boolean): Point[] {
-        if (bounds) {
-            return this.points.slice(0);
-        }
-
-        const result: Point[] = [];
-
-        const points = this.points;
-        const length = points.length;
-
-        bounds: for (let i = 0; i < length; i += 3) {
-            for (let i2 = 0; i2 < 3; i2++) {
-                const P = points[i + i2];
-
-                if (P === this.boundsA || P === this.boundsB || P === this.boundsC || P === this.boundsD) {
-                    continue bounds;
-                }
-            }
-
-            result.push(points[i], points[i+1], points[i+2]);
-        };
-
-        return result;
-    }
-
-
-
-    /*
-     * Add an area defined by triangle points.
-     */
-    public add(points: Point[]) {
-        const cPoints = this.points;
-        // We only update the Z coordinates at the end
-        const insidePoints = new Map<Point, number>();
-        
-        // points from the overlapping area
-        for (const P of cPoints) {
-            if (insidePoints.has(P)) {
-                continue;
-            }
-
-            const t = triangleAt(P.x, P.y, points);
-
-            if (!t) {
-                continue;
-            }
-
-            insidePoints.set(P, uvz(t) + P.z);
-        }
-
-        const insertedPoints = new Map<Point, Point>();
-
-        for (let i = 0; i < points.length; i += 3) {
-            const ins = [
-                insertedPoints.get(points[i]),
-                insertedPoints.get(points[i+1]),
-                insertedPoints.get(points[i+2])
-            ];
-
-            for (let i2 = 0; i2 < 3; i2++) {
-                let P = ins[i2];
-
-                if (!P) {
-                    const Ps = points[i + i2];
-                    P = ins[i2] = this.insertPoint(Ps.x, Ps.y);
-                    insidePoints.set(P, P.z + Ps.z);
-                    insertedPoints.set(Ps, P);
-                }
-            }
-            
-            for (let i2 = 0; i2 < 3; i2++) {
-                const A = points[i + i2];
-                const B = points[i + (i2 + 1) % 3];
-
-                for (const P of this.cutLine(A, B)) {
-                    if (P === ins[0] || P === ins[1] || P === ins[2]) {
-                        continue;
-                    }
-
-                    insidePoints.set(P, P.z + interpolatePoint(P, A, B));
-                }
-            }
-        }
-
-        const pL = cPoints.length;
-        const disconnectedPoints = new Map<Point, Point>();
-
-        // Find outline points and disconnect them
-        for (let i = 0; i < pL; i += 3) {
-            const has = [
-                insidePoints.has(cPoints[i]),
-                insidePoints.has(cPoints[i + 1]),
-                insidePoints.has(cPoints[i + 2])
-            ];
-            
-            if (has[0] && has[1] && has[2]) {
-                // The whole triangle is inside
-                continue;
-            }
-
-            for (let i2 = 0; i2 < 3; i2++) {
-                if (!has[i2]) {
-                    continue;
-                }
-
-                const P = cPoints[i + i2];
-                let P2 = disconnectedPoints.get(P);
-
-                if (!P2) {
-                    P2 = Point(P.x, P.y, P.z);
-                    disconnectedPoints.set(P, P2);
-                }
-
-                cPoints[i + i2] = P2;
-            }
-        }
-
-        for (const [P, z] of insidePoints) {
-            P.z = z;
-        }
-    }
-
-    public simplify(options: SimplifyOptions) {
-        // TODO: collapsing lines into points,
-        // don't forget this may invalidate point collapses
-        const points = this.points;
-        const length = points.length;
-        const collapse: Collapse[] = [];
-        
-        let displacement = 0;
-        
-        const bush = new KDBush(points, (p) => p.x, (p) => p.y);
-
-        let realPoints = new Set<Point>();
-
-        for (let i = 0; i < length; i+=3) {
-            for (let i2 = 0; i2 < 3; i2++) {
-                const Pi = i + i2;
-                const P = points[Pi];
-
-                if (realPoints.has(P)) {
-                    continue;
-                }
-
-                realPoints.add(P);
-
-                const onPoint = bush.within(P.x, P.y, PRECISION_D);
-
-                for (const ni of onPoint) {
-                    if (ni <= Pi) {
-                        continue;
-                    }
-                    
-                    const N = points[ni];
-
-                    if (N === P) {
-                        continue;
-                    }
-                    
-                    if (realPoints.has(N)) {
-                        // We already compared N and P
-                        continue;
-                    }
-                    
-                    if (Math.abs(N.z - P.z) < PRECISION_D) {
-                        points[ni] = P;
-                        continue;
-                    }
-  
-                    collapse.push(calculateCollapse(points, N, P, onPoint));
-                }
-            }
-        }
-
-        collapse.sort((a, b) => a.displacement - b.displacement);
-
-        for (let i = 0; i < collapse.length; i++) {
-            if (realPoints.size <= options.maxPoints && length <= options.maxTriangles * 3) {
-                break;
-            }
-
-            const c = collapse[i];
-
-            displacement += c.displacement;
-
-            if (c.type === 0) {
-                const P = points[c.targets[0]];
-                P.z = c.z;
-
-                for (let pI of c.targets) {
-                    const N = points[pI];
-                    if (N !== P) {
-                        realPoints.delete(points[pI]);
-                    }
-                    points[pI] = P;
-                }
-            }
-        }
-
-        return {displacement};
-    }
-
-    private insertPoint(x: number, y: number) {
-        const t = triangleAt(x, y, this.points);
-
-        if (!t) {
-            throw new Error('point outside bounds');
-        }
-
-        if (t.u === 1) {
-            return t.A;
-        }
-        
-        if (t.v === 1) {
-            return t.B;
-        }
-        
-        if (t.u === 0 && t.v === 0) {
-            return t.C;
-        }
-
-        const P = Point(x, y, uvz(t));
-
-        if (t.u === 0) {
-            // Lies on BC
-
-            this.points[t.i + 2] = P; // A B P
-            this.points.push(P, t.C, t.A); // P C A
-
-            return P;
-        }
-        
-        if (t.v === 0) {
-            // Lies on AC
-
-            this.points[t.i + 2] = P; // A B P
-            this.points.push(P, t.B, t.C); // P B C
-
-            return P;
-        }
-        
-        if (t.u + t.v === 1) {
-            // Lies on AB
-
-            this.points[t.i] = P; // P B C
-            this.points.push(t.A, P, t.C); // A P C
-
-            return P;
-        }
-
-        this.points[t.i] = P; // P B C
-        this.points.push(P, t.C, t.A); // P C A
-        this.points.push(P, t.A, t.B); // P A B
-
-        return P;
-    }
-    
-    private cutLine(P1: Point, P2: Point): Point[] {
-        const points = this.points;
-        const length = points.length;
-
-        const result: Point[] = [];
-        const lineA: Point[] = [];
-        const lineB: Point[] = [];
-
-        // Makes sure we don't duplicate points on touching triangles
-        // TODO: speedups?
-        function getPoint(A: Point, B: Point, t: TriangleUV) {
-            for (let i = 0; i < result.length; i++) {
-                if (lineA[i] === A && lineB[i] === B || lineA[i] === B && lineB[i] === A) {
-                    return result[i];
-                }
-            }
-
-            const P = uvPoint(t);
-            
-            result.push(P);
-            lineA.push(A);
-            lineB.push(B);
-
-            return P;
-        }
-        
-        function addPoint(P: Point) {
-            for (let i = 0; i < result.length; i++) {
-                if (P === result[i]) {
-                    return;
-                }
-            }
-        
-            result.push(P);
-            lineA.push(null);
-            lineB.push(null);
-        }
-        
-        for (let i = 0; i < length; i+=3) {
-            const A = points[i];
-            const B = points[i+1];
-            const C = points[i+2];
-
-            const { AB, AC, BC } = lineUVs(P1, P2, A, B, C);
-
-            let C1: Point;
-            let C2: Point;
-
-            // Arranged so T1 is always the inner point
-            // and C1 is on the line T1 -> T2
-            let T1: Point;
-            let T2: Point;
-            let T3: Point;
-
-            let cutsAB = AB ? onUV(AB) : false;
-            let cutsAC = AC ? onUV(AC) : false;
-            let cutsBC = BC ? onUV(BC) : false;
-
-            if (cutsAB && cutsAC && cutsBC) {
-                // It passes through a point and through a side
-                if (AB.u === 1) {
-                    // Cuts through A
-                    C1 = getPoint(B, C, BC);
-                    T1 = A;
-                    T2 = B;
-                    T3 = C;
-                } else if (AB.u === 0) {
-                    // Cuts through B
-                    C1 = getPoint(A, C, AC);
-                    T1 = B;
-                    T2 = C;
-                    T3 = A;
-                } else if (AC.u === 0) {
-                    // Cuts through C
-                    C1 = getPoint(A, B, AB);
-                    T1 = C;
-                    T2 = A;
-                    T3 = B;
-                }
-            
-                // Add the point we passed through
-                addPoint(T1);
-
-                points[i] = T1;
-                points[i+1] = C1;
-                points[i+2] = T2;
-
-                points.push(T1, T3, C1);
-
-                continue;
-            }
-
-            if (cutsAB) {
-                if (cutsAC) {
-                    // AB -> AC
-                    
-                    if (AB.u === 1 && AC.u === 1) {
-                        // Just touches A
-                        continue;
-                    }
-
-                    if (AB.u === 0 && AC.u === 0) {
-                        // Lies on BC
-                        addPoint(B);
-                        addPoint(C);
-                        continue;
-                    }
-
-                    C1 = getPoint(A, B, AB);
-                    C2 = getPoint(A, C, AC);
-                    T1 = A;
-                    T2 = B;
-                    T3 = C;
-                } else if (cutsBC) {
-                    // AB -> BC
-
-                    if (AB.v === 1 && BC.v === 1) {
-                        // Just touches B
-                        continue;
-                    }
-
-                    if (AB.v === 0 && BC.v === 0) {
-                        // Lies on AC
-                        addPoint(A);
-                        addPoint(C);
-                        continue;
-                    }
-
-                    C1 = getPoint(A, B, AB);
-                    C2 = getPoint(B, C, BC);
-                    T1 = B;
-                    T2 = A;
-                    T3 = C;
-                } else {
-                    continue;
-                }
-            } else if (cutsAC && cutsBC) {
-                // AC -> BC
-
-                if (AC.u === 0 && BC.v === 0) {
-                    // Just touches C
-                    continue;
-                }
-                    
-                if (AC.u === 1 && BC.v === 1) {
-                    // Lies on AB
-                    addPoint(A);
-                    addPoint(B);
-                    continue;
-                }
-
-                C1 = getPoint(B, C, BC);
-                C2 = getPoint(A, C, AC);
-                T1 = C;
-                T2 = B;
-                T3 = A;
-            } else {
-                continue;
-            }
-
-            points[i] = T1;
-            points[i+1] = C1;
-            points[i+2] = C2;
-
-            points.push(C1, C2, T3, C1, T3, T2);
-        }
-
-        return result;
-    }
-
-    public sample(x: number, y: number): number {
-        const t = triangleAt(x, y, this.points);
-
-        if (!t) {
-            return 0;
-        }
-
-        return uvz(t);
-    }
-}
-
 interface CollapseBase {
     displacement: number,
 }

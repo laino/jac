@@ -1,9 +1,25 @@
 
 import * as math from 'math';
+
+const cloud = new math.Cloud(2, {maxPoints: 4});
+
+cloud.add(5, [0, 0]);
+cloud.add(5, [1, 1]);
+cloud.add(5, [2, 2]);
+cloud.add(5, [3, 3]);
+
+console.log(cloud.sample([-1, -1]));
+
+cloud.add(5, [4, 4]);
+
+console.log(cloud.sample([-1, -1]));
+
+console.log(cloud.getPoints());
+
+/*
 import * as fs from 'fs';
 import {createCanvas} from 'canvas';
 
-/*
 const p1 = {x: 0, y: 0, z: 0};
 const p2 = {x: 1, y: 0, z: 0};
 const p3 = {x: 2, y: 0, z: 0};
@@ -14,6 +30,7 @@ const l2 = {x: 2, y: 2, z: 0};
 console.log(math.uv(300, 300, p1, p2, p3));
 */
 
+/*
 const m = new math.Mesh();
 
 const A = {x: 100, y: 0, z: 200};
@@ -45,7 +62,6 @@ const V6 = {x: 3, y: 3, z: 2};
 console.log(math.volume(V1, V2, V3));
 console.log(math.volume(V4, V5, V6));
 console.log(math.volume(V4, V5, V6) + math.volume(V1, V2, V3));
-*/
 
 fs.writeFileSync('/tmp/out.png', draw(m.getPoints(false)));
 
@@ -99,7 +115,6 @@ function draw(points: math.Point[]) {
         c.closePath();
         c.fill();
     }
-    */
         
     c.lineWidth = 3;
 
@@ -171,3 +186,4 @@ function draw(points: math.Point[]) {
     return canvas.toBuffer('image/png');
 }
 
+*/
