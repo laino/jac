@@ -370,14 +370,16 @@ export class Cloud {
                 } else if (points.length > this.settings.maxPoints) {
                     for (let i2 = points.length - 1; i2 >= 0; i2--) {
                         const P2 = points[i2];
-                        const v = P.v * weights[i2] / sum;
-
-                        P2.v += v;
+                        const V = P.v / sum * weights[i2];
+                        const combinedV = P2.v + V;
                         
-                        const vR = v / (v + P2.v);
                         for (let i3 = 0; i3 < this.dimensions; i3++) {
-                            P2.d[i3] = round((P2.d[i3] * (1 - vR) + P.d[i3] * vR));
+                            const old = P2.d[i3];
+
+                            P2.d[i3] = ((old * P2.v) + (P.d[i3] * V)) / combinedV;
                         }
+                        
+                        P2.v = combinedV;
                     }
 
                     displacement += P.v;
