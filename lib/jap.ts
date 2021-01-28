@@ -10,6 +10,9 @@ export interface JapInsertOptions {
 }
 
 export interface JapSettings {
-    maxPoints: number,
-    positiveZ?: boolean
+    maxPoints: number
+}
+
+class JAC {
+
 }
