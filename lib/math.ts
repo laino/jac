@@ -297,8 +297,6 @@ export class Cloud {
             }
         }
 
-        console.log(selection);
-
         return Point(v, Rd);
     }
 
@@ -439,7 +437,6 @@ export class Cloud {
     private weights(d: number[], exclude?: Point) {
         const points = this.points;
         const weights: number[] = [];
-        const pParam = Math.E;
 
         let sum = 0;
 
@@ -451,13 +448,13 @@ export class Cloud {
                 continue;
             }
 
-            const dist = distance(p.d, d, this.dimensions);
+            const dist = _d(p.d, d, this.dimensions);
 
             if (dist === 0) {
                 distWasZero = true;
                 weights.push(0);
             } else {
-                const w = 1 / Math.pow(dist, pParam);
+                const w = 1 / dist;
                 weights.push(w);
                 sum += w;
             }
@@ -481,12 +478,16 @@ export class Cloud {
     }    
 }
 
-function distance(A: number[], B: number[], dimensions: number) {
+function _d(A: number[], B: number[], dimensions: number) {
     let sum = 0;
 
     for (let i = 0; i < dimensions; i++) {
         sum += (B[i] - A[i]) * (B[i] - A[i]);
     }
 
-    return Math.sqrt(sum);
+    return sum;
+}
+
+export function distance(A: number[], B: number[], dimensions: number) {
+    return Math.sqrt(_d(A,B, dimensions));
 }
