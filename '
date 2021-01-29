@@ -1,6 +1,4 @@
 
-import { PerformanceObserver, performance } from 'perf_hooks';
-
 const PRECISION = 15;
 const PRECISION_N = Math.pow(10, PRECISION);;
 
@@ -80,92 +78,39 @@ function fullCompare(cloud: Cloud) {
     };
 }
 
-class SortTreeNode {
-    public index: number;
-    public parent: SortTreeNode;
-    public left: SortTreeNode;
-    public right: SortTreeNode;
-
-    public constructor(init: SortTreeNode = null) {
-        this.index = 0;
-        this.left = init;
-        this.right = init;
-        this.parent = init;
-    }
+export interface SortTreeNode {
+    index: number,
+    parent: SortTreeNode,
+    left: SortTreeNode,
+    right: SortTreeNode
 }
 
-const TreeBottom = new SortTreeNode();
-TreeBottom.index = -1;
+function SortTreeNode(index: number): SortTreeNode {
+    return {
+        index,
+        parent: null,
+        left: null,
+        right: null,
+    };
+}
 
 export class SortTree {
+    public root: SortTreeNode;
     public map: SortTreeNode[];
-
-    public root: SortTreeNode = TreeBottom;
-    public first: SortTreeNode = TreeBottom;
-    public last: SortTreeNode = TreeBottom;
 
     public constructor(private cloud: Cloud, private compare: DimensionCompare) {
         this.map = [];
 
         for (let i = 0; i < cloud.settings.maxPoints; i++) {
-            const node = new SortTreeNode(TreeBottom);
-            node.index = i;
-            this.map.push(node);
+            this.map.push(SortTreeNode(i));
         }
     }
     
     public update(i: number) {
-        this.updateNode(this.map[i]);
-    }
-    
-    private updateNode(node: SortTreeNode) {
-        if (this.root !== node) {
-            const parent = node.parent;
+        const node = this.map[i];
 
-            if (parent !== TreeBottom) {
-                const isLeft = parent.right === node;
-
-                if (isLeft && this.compare(parent.index, node.index) > 0) {
-                    this.unlinkNode(node);
-                    this.insertNode(node);
-                }
-            } else {
-                this.insertNode(node);
-            }
-        }
-
-        const left = node.left;
-        const right = node.right;
-
-        let updateLeft = false;
-        let updateRight = false;
-
-        if (left !== TreeBottom && this.compare(node.index, left.index) > 0) {
-            updateLeft = true;
-            this.unlinkNode(left);
-        }
-        
-        if (right !== TreeBottom && this.compare(node.index, right.index) <= 0) {
-            updateRight = true;
-            this.unlinkNode(right);
-        }
-        
-        if (updateLeft) this.insertNode(left);
-        if (updateRight) this.insertNode(right);
-    }
-
-    public depth(start = this.root) {
-        let max = 0;
-
-        if (start.left !== TreeBottom) {
-            max = this.depth(start.left) + 1;
-        }
-
-        if (start.right !== TreeBottom) {
-            max = Math.max(max, this.depth(start.right) + 1);
-        }
-
-        return max;
+        this.unlinkNode(node);
+        this.insertNode(node);
     }
     
     public remove(i: number) {
@@ -175,20 +120,77 @@ export class SortTree {
     }
 
     private insertNode(node: SortTreeNode) {
-        if (this.root === TreeBottom) {
+        if (!this.root) {
             this.root = node;
-            this.first = node;
-            this.last = node;
             return;
         }
 
         this.insert(this.root, node);    
     }
 
+    private unlinkNode(node: SortTreeNode) {
+        if (node === this.root) {
+            if (node.right) {
+                this.root = node.right;
+
+                if (node.left) {
+                    this.insert(this.root, node.left);
+                }
+            } else {
+                this.root = node.left;
+            }
+
+            node.left = null;
+            node.right = null;
+
+            return;
+        }
+
+        const parent = node.parent;
+
+        if (!parent) {
+            return;
+        }
+
+        if (parent.left === node) {
+            if (node.left) {
+                parent.left = node.left;
+                node.left.parent = parent;
+
+                if (node.right) {
+                    this.insert(parent.left, node.right);
+                }
+            } else if (node.right) {
+                parent.left = node.right;
+                node.right.parent = parent;
+            } else {
+                parent.left = null;
+            }
+        } else {
+            if (node.right) {
+                parent.right = node.right;
+                node.right.parent = parent;
+
+                if (node.left) {
+                    this.insert(parent.right, node.left);
+                }
+            } else if (node.left) {
+                parent.right = node.left;
+                node.left.parent = parent;
+            } else {
+                parent.right = null;
+            }
+        }
+
+        node.left = null;
+        node.right = null;
+        node.parent = null;
+    }
+
     public findNode(condition: (node: SortTreeNode) => number): SortTreeNode {
         let node = this.root;
 
-        while (node !== TreeBottom) {
+        while (node) {
             const side = condition(node);
             
             if (side === 0) {
@@ -205,164 +207,32 @@ export class SortTree {
         return null;
     }
 
-    // Replace a bottom node
-    private replace(target: SortTreeNode, node: SortTreeNode) {
-        const root = this.root;
-
-        if (target === this.root) {
-            target = node;
-        } else {
-            const targetParent = target.parent;
-
-            if (targetParent.left === target) {
-                targetParent.left = node;
-            } else {
-                targetParent.right = node;
-            }
-
-            node.parent = target.parent;
-        }
-
-        const rootSide = this.compare(target.index, root.index);
-
-        // Current root is full
-        if (root.left !== TreeBottom && root.right !== TreeBottom) {
-            if (rootSide <= 0) {
-                target.left = root;
-            } else {
-                target.right = root;
-            }
-
-            target.parent = TreeBottom;
-            root.parent = target;
-            this.root = target;
-        }
-
-        if (rootSide <= 0) {
-            if (root.right === TreeBottom) {
-                // RL R T
-                root.right = target;
-                target.parent = root;
-                return;
-            }
-
-            const rR = this.compare(target.index, root.right.index);
-
-            if (rR <= 0) {
-                // R RL T
-            }
-        }
-    }
-
     private insert(parent: SortTreeNode, node: SortTreeNode) {
         while (true) {
             const side = this.compare(parent.index, node.index);
 
             if (side <= 0) {
-                if (parent.left !== TreeBottom) {
-                    parent = parent.left;
-                    continue;
+                if (!parent.left) {
+                    parent.left = node;
+                    node.parent = parent;
+                    return;
                 }
 
-                if (parent === this.first) {
-                    do {
-                        this.first = node;
-                    } while ((node = node.left) !== TreeBottom)
-                }
-
-                this.replace(parent, node);
-
-                return;
+                parent = parent.left;
             } else {
-                if (parent.right !== TreeBottom) {
-                    parent = parent.right;
-                    continue;
+                if (!parent.right) {
+                    parent.right = node;
+                    node.parent = parent;
+                    return;
                 }
-                
-                if (parent === this.last) {
-                    do {
-                        this.last = node;
-                    } while ((node = node.right) !== TreeBottom)
-                }
-                
-                this.replace(parent, node);
 
-                return;
-            }
-        }
-    }
-    
-    private unlinkNode(node: SortTreeNode) {
-        const left = node.left;
-        const right = node.right;
-        const parent = node.parent;
-
-        if (this.first === node) {
-            this.first = this.rightOf(node);
-        }
-        
-        if (this.last === node) {
-            this.last = this.leftOf(node);
-        }
-
-        if (node === this.root) {
-            if (right !== TreeBottom) {
-                this.root = right;
-
-                if (left !== TreeBottom) {
-                    this.insert(this.root, left);
-                }
-            } else {
-                this.root = left;
-            }
-
-            node.left = TreeBottom;
-            node.right = TreeBottom;
-
-            return;
-        }
-
-        if (!parent) {
-            return;
-        }
-        
-        node.left = TreeBottom;
-        node.right = TreeBottom;
-        node.parent = TreeBottom;
-
-        if (parent.left === node) {
-            if (left !== TreeBottom) {
-                parent.left = left;
-                left.parent = parent;
-
-                if (right !== TreeBottom) {
-                    this.insert(left, right);
-                }
-            } else if (right !== TreeBottom) {
-                parent.left = right;
-                right.parent = parent;
-            } else {
-                parent.left = TreeBottom;
-            }
-        } else {
-            if (right !== TreeBottom) {
-                parent.right = right;
-                right.parent = parent;
-
-                if (left !== TreeBottom) {
-                    this.insert(right, left);
-                }
-            } else if (left !== TreeBottom) {
-                parent.right = left;
-                left.parent = parent;
-            } else {
-                parent.right = TreeBottom;
+                parent = parent.right;
             }
         }
     }
 
     public iterateRight(node: SortTreeNode, iter: (node: SortTreeNode) => boolean) {
-        while (node !== TreeBottom && iter(node) !== false) {
+        while (node && iter(node) !== false) {
             node = this.rightOf(node);
         }
 
@@ -370,7 +240,7 @@ export class SortTree {
     }
     
     public iterateLeft(node: SortTreeNode, iter: (node: SortTreeNode) => boolean) {
-        while (node !== TreeBottom && iter(node) !== false) {
+        while (node && iter(node) !== false) {
             node = this.leftOf(node);
         }
 
@@ -378,44 +248,83 @@ export class SortTree {
     }
 
     public rightOf(node: SortTreeNode): SortTreeNode {
-        if (node.right === TreeBottom) {
+        if (node.right) {
+            node = node.right;
+
+            while (node.left) {
+                node = node.left;
+            }
+        } else {
             let parent: SortTreeNode;
 
-            while ((parent = node.parent) !== TreeBottom && parent.right === node) {
+            while ((parent = node.parent) && parent.right === node) {
                 node = parent;
             }
 
             node = parent;
-        } else {
-            node = node.right;
-
-            while (node.left !== TreeBottom) {
-                node = node.left;
-            }
         }
 
         return node;
     }
 
     public leftOf(node: SortTreeNode): SortTreeNode {
-        if (node.left === TreeBottom) {
+        if (node.left) {
+            node = node.left;
+
+            while (node.right) {
+                node = node.right;
+            }
+        } else {
             let parent: SortTreeNode;
 
-            while ((parent = node.parent) !== TreeBottom && parent.left === node) {
+            while ((parent = node.parent) && parent.left === node) {
                 node = parent;
             }
 
             node = parent;
-        } else {
-            node = node.left;
-
-            while (node.right !== TreeBottom) {
-                node = node.right;
-            }
         }
 
         return node;
     }
+    
+    public first(): Point {
+        const node = this.lastNode();
+        return node && this.cloud.points[node.index];
+    }
+    
+    public last(): Point {
+        const node = this.lastNode();
+        return node && this.cloud.points[node.index];
+    }
+    
+    public firstNode() {
+        if (!this.root) {
+            return null;
+        }
+
+        let node = this.root;
+
+        while (node.left) {
+            node = node.left;
+        }
+
+        return node;
+    }
+    
+    public lastNode() {
+        if (!this.root) {
+            return null;
+        }
+
+        let node = this.root;
+
+        while (node.right) {
+            node = node.right;
+        }
+
+        return node;
+    }
+    
 
     public rebuild() {
         const cloud = this.cloud;
@@ -423,14 +332,13 @@ export class SortTree {
         for (let i = 0; i < cloud.numPoints; i++) {
             const node = this.map[i];
 
-            node.parent = TreeBottom;
-            node.left = TreeBottom;
-            node.right = TreeBottom;
+            node.parent = null;
+            node.left = null;
+            node.right = null;
         }
 
-        this.root = TreeBottom;
-        this.first = TreeBottom;
-        this.last = TreeBottom;
+        this.root = null;
+
 
         for (let i = 0; i < cloud.numPoints; i++) {
             const node = this.map[i];
@@ -440,6 +348,9 @@ export class SortTree {
 }
 
 export class Dimension {
+    public min = 0;
+    public max = 0;
+    
     public tree: SortTree;
 
     public constructor(
@@ -453,19 +364,36 @@ export class Dimension {
     
     public update(index: number) {
         this.tree.update(index);
+
+        this.updateMinMax();
     }
     
     public remove(index: number) {
         this.tree.remove(index);
+        
+        this.updateMinMax();
     }
 
     public updateAll() {
         this.tree.rebuild();
+
+        this.updateMinMax();
     }
 
-    public isBounds(index: number) {
-        const tree = this.tree;
-        return tree.first.index === index || tree.last.index === index;
+    private updateMinMax() {
+        const n = this.n;
+
+        if (this.cloud.numPoints) {
+            this.min = this.tree.first()[n];
+            this.max = this.tree.last()[n];
+        } else {
+            this.min = 0;
+            this.max = 0;
+        }
+    }
+    
+    public isBounds(p: Point) {
+        return this.tree.first() === p || this.tree.last() === p;
     }
     
     public range(x: number, y: number): PointWeight[] {
@@ -628,8 +556,6 @@ export class Cloud {
     }
 
     public addDimension() {
-        const dimensions = this.dimensions;
-        const l = this.numPoints;
         const points = this.points;
 
         const dim = new Dimension(this.dimensions, this, 
@@ -639,10 +565,10 @@ export class Cloud {
 
         this.dimensions++;
 
-        for (let i = 0; i < l; i++) {
+        for (let i = 0; i < this.numPoints; i++) {
             const p = points[i];
 
-            if (p.length < dimensions) {
+            if (p.length < this.dimensions) {
                 const n = new Float64Array(this.dimensions);
                 n.set(p);
                 points[i] = p;
@@ -725,17 +651,14 @@ export class Cloud {
     public ranges(ranges: NumberArrayLike[]) {
         const selection = new Map<Point, number>();
 
-        const dimensions = this.dimensions;
-        const dims = this.dims;
-
-        for (let i = 0; i < dimensions; i++) {
+        for (let i = 0; i < this.dimensions; i++) {
             const rn = ranges[i];
 
             if (!rn) {
                 continue;
             }
 
-            const dim = dims[i];
+            const dim = this.dims[i];
 
             const range = new Map<Point, number>();
 
@@ -788,9 +711,7 @@ export class Cloud {
 
         const selection = new Map<Point, number>();
 
-        const l = this.numPoints;
-
-        for (let i = 0; i < l; i++) {
+        for (let i = 0; i < this.numPoints; i++) {
             const P = points[i];
             const w = weights[i];
 
@@ -805,25 +726,25 @@ export class Cloud {
         const points = this.points;
         const dimensions = this.dimensions;
 
-        let l = this.numPoints;
-
         const tmp = new Float64Array(this.dimensions);
 
-        let node = tree.first;
+        let node = tree.firstNode();
 
         // worst case: O((this.dimensions * 2 + 1) * this.numPoints)
         
         while (node) {
             const P = points[node.index];
 
-            if (this.isBounds(node.index)) {
+            if (this.isBounds(P)) {
                 node = tree.rightOf(node);
                 continue;
             }
 
+                const a = Date.now();
             const weights = this.weights(P, P);
+                console.log('simp', Date.now() - a);
 
-            for (let i = 0; i < l; i++) {
+            for (let i = 0; i < this.numPoints; i++) {
                 const P2 = points[i];
                 const V = P[0] * weights[i];
 
@@ -843,8 +764,8 @@ export class Cloud {
 
                 if (swapped !== -1) {
                     weights[i] = weights[swapped];
+                    weights[swapped] = 0;
                     i--;
-                    l--;
                 }
             }
             
@@ -870,7 +791,9 @@ export class Cloud {
         const existing = this.getAt(data);
 
         if (existing === -1 || existing === target) {
-            P.set(data);
+            for (let i = 0; i < dimensions; i++) {
+                P[i] = data[i];
+            }
 
             for (let i = 0; i < dimensions; i++) {
                 dims[i].update(target);
@@ -881,7 +804,7 @@ export class Cloud {
 
         if (data[0] > 0) {
             points[existing][0] += data[0];
-            dims[0].update(existing);
+            this.dims[0].update(existing);
         }
 
         return this.remove(target);
@@ -915,9 +838,9 @@ export class Cloud {
         return last;
     }
 
-    private isBounds(index: number) {
+    private isBounds(P: Point) {
         for (const d of this.dims) {
-            if (d.isBounds(index)) {
+            if (d.isBounds(P)) {
                 return true;
             }
         }
@@ -930,9 +853,7 @@ export class Cloud {
         let zeros = 0;
         let sum = 0;
 
-        const l = this.numPoints;
-
-        for (let i = 0; i < l; i++) {
+        for (let i = 0; i < this.numPoints; i++) {
             const P = points[i];
 
             if (P === exclude) {
@@ -953,7 +874,7 @@ export class Cloud {
         if (zeros) {
             const zerosInv = 1 / zeros;
 
-            for (let i = 0; i < l; i++) {
+            for (let i = 0; i < this.numPoints; i++) {
                 if (weights[i] !== 0) {
                     weights[i] = 0;
                 } else if (points[i] !== exclude) {
@@ -962,7 +883,7 @@ export class Cloud {
             }
         } else {
             const sumInv = 1 / sum;
-            for (let i = 0; i < l; i++) {
+            for (let i = 0; i < this.numPoints; i++) {
                 weights[i] *= sumInv;
             }
         }
@@ -976,23 +897,15 @@ export class Cloud {
 
         let dist = 0;
 
-        const dimensions = this.dimensions;
-        const dims = this.dims;
-        const points = this.points;
-
-        for (let i = 1; i < dimensions; i++) {
-            const d = dims[i];
-
-            const min = points[d.tree.first.index][i];
-            const max = points[d.tree.last.index][i];
-
-            let rD = max - min;
+        for (let i = 1; i < this.dimensions; i++) {
+            const d = this.dims[i];
+            let rD = d.max - d.min;
 
             if (rD === 0) {
                 continue;
             }
 
-            const r = (a[i] - b[i]) / rD;
+            const r = (a[i] - b[i]) / (d.max - d.min);
 
             dist += r * r;
         }
@@ -1002,7 +915,7 @@ export class Cloud {
 
     public stats() {
         for (const d of this.dims){
-            console.log(d.tree.depth(d.tree.root));
+            console.log(d.tree.root);
         }
     }
 }
