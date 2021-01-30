@@ -1,24 +1,55 @@
 
-export class SortTreeNode<K> {
-    public key: K;
-    public parent: SortTreeNode<K>;
-    public left: SortTreeNode<K>;
-    public right: SortTreeNode<K>;
-
-    public constructor(key: K, init: SortTreeNode<K> = undefined) {
-        this.key = key;
-        this.left = init;
-        this.right = init;
-        this.parent = init;
-    }
+export interface SortTreeNode<K> {
+    keys: K[];
+    parent: SortTreeNode<K>;
+    left: SortTreeNode<K>;
+    right: SortTreeNode<K>;
 }
 
-const TreeBottom = new SortTreeNode<any>(undefined);
+let TreeBottom: SortTreeNode<any>;
+
+function createNode<K>(keys: K[]): SortTreeNode<K> {
+    return {
+        keys,
+        left: TreeBottom,
+        right: TreeBottom,
+        parent: TreeBottom
+    };
+}
+
+TreeBottom = createNode([]);
 TreeBottom.left = TreeBottom;
 TreeBottom.right = TreeBottom;
 TreeBottom.parent = TreeBottom;
 
 export type CompareFunction<K> = (a: K, b: K) => number;
+
+function removeKeyFromNode<K>(node: SortTreeNode<K>, k: K) {
+    const keys = node.keys;
+    const l = keys.length - 1;
+
+    for (let i = l; i >= 0; i--) {
+        if (keys[i] === k) {
+            keys[i] = keys[l];
+            keys.pop();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function nodeKeyIndex<K>(node: SortTreeNode<K>, k: K) {
+    const keys = node.keys;
+
+    for (let i = keys.length - 1; i >= 0; i--) {
+        if (keys[i] === k) {
+            return i;
+        }
+    }
+
+    return -1;
+}
 
 export abstract class SortTree<K, V> implements Iterable<K> {
     public keyMap = new Map<K, SortTreeNode<K>>();
@@ -29,32 +60,38 @@ export abstract class SortTree<K, V> implements Iterable<K> {
 
     public constructor(private cmp: CompareFunction<V>) {
     }
-
+    
     public abstract get(k: K): V;
     
+    public getKeys(value: V): K[] {
+        return this.findNode(value, this.cmp).keys;
+    }
+ 
     public update(k: K) {
         let node = this.keyMap.get(k);
 
         if (node) {
-            node = this.unlinkNode(node);
-            node.key = k;
-            node.left = TreeBottom;
-            node.right = TreeBottom;
-            node.parent = TreeBottom;
-        } else {
-            node = new SortTreeNode(k, TreeBottom);
+            if (node.keys.length === 1) {
+                node = this.unlinkNode(node);
+            } else {
+                removeKeyFromNode(node, k);
+                node = null;
+            }
         }
 
-        this.keyMap.set(k, node);
-
-        this.insertNode(node);
+        this.insertNode(k, node);
     }
     
     public remove(k: K) {
         const node = this.keyMap.get(k);
 
         if (node) {
-            this.unlinkNode(node);
+            if (node.keys.length === 1) {
+                this.unlinkNode(node);
+            } else {
+                removeKeyFromNode(node, k);
+            }
+
             this.keyMap.delete(k);
         }
     }
@@ -62,18 +99,8 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     public updateAll() {
         const keys = this.keyMap;
 
-        for (const node of keys.values()) {
-            node.parent = TreeBottom;
-            node.left = TreeBottom;
-            node.right = TreeBottom;
-        }
-
-        this.root = TreeBottom;
-        this.first = TreeBottom;
-        this.last = TreeBottom;
-
-        for (const node of keys.values()) {
-            this.insertNode(node);
+        for (const k of keys.keys()) {
+            this.update(k);
         }
     }
 
@@ -90,40 +117,75 @@ export abstract class SortTree<K, V> implements Iterable<K> {
 
         return max;
     }
-    
-    public getKey(value: V): K {
-        return this.findNode(value, this.cmp).key;
-    }
 
-    public keys(start: V = undefined, inclusive = false) {
-        let node: SortTreeNode<K>;
-
-        if (start != null) {
-            node = this.findGT(this.root, start, inclusive);
-        } else {
-            node = this.first;
+    public firstKey() {
+        if (this.first !== TreeBottom) {
+            return this.first.keys[0];
         }
-
-        return this.iterator(node);
     }
     
-    public keysReversed(start: V = undefined, inclusive = false) {
-        let node: SortTreeNode<K>;
+    public lastKey() {
+        if (this.last !== TreeBottom) {
+            const keys = this.last.keys;
+            return keys[keys.length - 1];
+        }
+    }
 
-        if (start != null) {
-            node = this.findLT(this.root, start, inclusive);
-        } else {
-            node = this.first;
+    public keys() {
+        return this.iterator(this.first, false, 0);
+    }
+
+    public keysReversed() {
+        const node = this.last;
+        return this.iterator(node, true, node.keys.length - 1);
+    }
+    
+    public keysFromKey(key: K, inclusive = false) {
+        let node = this.keyMap.get(key);
+        let kIndex = nodeKeyIndex(node, key);
+
+        if (!inclusive) {
+            kIndex++;
+
+            if (kIndex === node.keys.length) {
+                node = this.rightOfNode(node);
+                kIndex = 0;
+            }
         }
 
-        return this.iterator(node, true);
+        return this.iterator(node, false, kIndex);
+    }
+     
+    public keysReversedFromKey(key: K, inclusive = false) {
+        let node = this.keyMap.get(key);
+        let kIndex = nodeKeyIndex(node, key);
+
+        if (!inclusive) {
+            kIndex--;
+            if (kIndex === -1) {
+                node = this.leftOfNode(node);
+                kIndex = node.keys.length - 1;
+            }
+        }
+
+        return this.iterator(node, true, kIndex);
+    }
+    
+    public keysFromValue(start: V, inclusive = false) {
+        const node = this.findGT(this.root, start, inclusive);
+        return this.iterator(node, false, 0);
+    }
+    
+    public keysReversedFromValue(start: V, inclusive = false) {
+        const node = this.findLT(this.root, start, inclusive);
+        return this.iterator(node, true, node.keys.length - 1);
     }
      
     public [Symbol.iterator](): Iterator<K> {
-        return this.iterator(this.first);
+        return this.keys();
     };
     
-    private iterator(node: SortTreeNode<K>, reverse = false) {
+    private iterator(node: SortTreeNode<K>, reverse: boolean, nodeIndex: number) {
         return {
             next: () => {
                 if (node === TreeBottom) {
@@ -133,14 +195,27 @@ export abstract class SortTree<K, V> implements Iterable<K> {
                     };
                 }
 
-                const current = node;
-
-                node = reverse ? this.leftOfNode(node) : this.rightOfNode(node);
-
-                return {
+                const result = {
                     done: false,
-                    value: current.key
+                    value: node.keys[nodeIndex]
                 };
+
+                if (reverse) {
+                    nodeIndex--;
+                    if (nodeIndex === -1) {
+                        node = this.leftOfNode(node);
+                        nodeIndex = node.keys.length - 1;
+                    }
+                } else {
+                    nodeIndex++;
+
+                    if (nodeIndex === node.keys.length) {
+                        node = this.rightOfNode(node);
+                        nodeIndex = 0;
+                    }
+                }
+
+                return result;
             },
             [Symbol.iterator]() {
                 return this;
@@ -152,7 +227,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         let node = this.root;
 
         while (node !== TreeBottom) {
-            const side = compare(this.get(node.key), value);
+            const side = compare(this.get(node.keys[0]), value);
             
             if (side === 0) {
                 return node;
@@ -177,25 +252,25 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         let greatest: SortTreeNode<K> = TreeBottom;
 
         while (true) {
-            const side = cmp(this.get(parent.key), value);
+            const side = cmp(this.get(parent.keys[0]), value);
 
-            if (side <= 0) {
-                if (equal && side === 0) {
-                    return parent;
-                }
+            if (equal && side === 0) {
+                return parent;
+            }
 
-                if (parent.left === TreeBottom) {
-                    return greatest;
-                }
-
-                parent = parent.left;
-            } else {
+            if (side > 0) {
                 if (parent.right === TreeBottom) {
                     return parent;
                 }
 
                 greatest = parent;
                 parent = parent.right;
+            } else {
+                if (parent.left === TreeBottom) {
+                    return greatest;
+                }
+
+                parent = parent.left;
             }
         }
     }
@@ -210,7 +285,11 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         let smallest: SortTreeNode<K> = TreeBottom;
 
         while (true) {
-            const side = cmp(this.get(parent.key), value);
+            const side = cmp(this.get(parent.keys[0]), value);
+
+            if (equal && side === 0) {
+                return parent;
+            }
 
             if (side < 0) {
                 if (parent.left === TreeBottom) {
@@ -220,18 +299,6 @@ export abstract class SortTree<K, V> implements Iterable<K> {
                 smallest = parent;
                 parent = parent.left;
             } else {
-                if (equal && side === 0) {
-                    // Walk to the leftmost node still matching the
-                    // condition
-                    smallest = parent;
-                    while ((parent = parent.left) !== TreeBottom &&
-                           cmp(this.get(parent.key), value) === 0) {
-
-                        smallest = parent;
-                    }
-                    return smallest;
-                }
-
                 if (parent.right === TreeBottom) {
                     return smallest;
                 }
@@ -245,45 +312,62 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         const cmp = this.cmp;
 
         while (true) {
-            const side = cmp(this.get(parent.key), value);
+            const side = cmp(this.get(parent.keys[0]), value);
 
-            if (side <= 0) {
-                if (parent.left === TreeBottom) {
-                    return {parent, side};
+            if (side < 0) {
+                if (parent.left !== TreeBottom) {
+                    parent = parent.left;
+                    continue;
                 }
-
-                parent = parent.left;
-            } else {
-                if (parent.right === TreeBottom) {
-                    return {parent, side};
+            } else if (side > 0) {
+                if (parent.right !== TreeBottom) {
+                    parent = parent.right;
+                    continue;
                 }
-
-                parent = parent.right;
             }
+
+            return {parent, side};
         }
     }
     
-    private insertNode(node: SortTreeNode<K>) {
+    private insertNode(key: K, node?: SortTreeNode<K>) {
+        node = this._insert(this.root, key, node);    
+        this.keyMap.set(key, node);
+    }
+    
+    private _insert(root: SortTreeNode<K>, key: K, node?: SortTreeNode<K>) {
         if (this.root === TreeBottom) {
+            if (!node) {
+                node = createNode([key]);
+            }
+
             this.root = node;
             this.first = node;
             this.last = node;
-            return;
+
+            return node;
         }
 
-        this.insert(this.root, node);    
-    }
-    
-    private insert(root: SortTreeNode<K>, node: SortTreeNode<K>) {
-        const nodeValue = this.get(node.key);
+        const nodeValue = this.get(key);
 
         const {parent, side} = this.findLeaf(root, nodeValue);
 
-        if (side <= 0) {
+        if (side === 0) {
+            parent.keys.push(key);
+            return parent;
+        }
+
+        if (!node) {
+            node = createNode([key]);
+        }
+
+        if (side < 0) {
             this.insertLeft(parent, node);
         } else {
             this.insertRight(parent, node);
         }
+
+        return node;
     }
 
     private insertLeft(parent: SortTreeNode<K>, node: SortTreeNode<K>) {
@@ -327,56 +411,48 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     }
  
     private unlinkNode(node: SortTreeNode<K>) {
-        while (true) {
-            const left = node.left;
-            const right = node.right;
+        let left = node.left;
+        let right = node.right;
 
-            if (left !== TreeBottom && right !== TreeBottom) {
-                let replace = right;
+        if (left !== TreeBottom && right !== TreeBottom) {
+            let replace = right;
 
-                while (replace.left !== TreeBottom) {
-                    replace = replace.left;
-                }
-
-                node.key = replace.key;
-                this.keyMap.set(replace.key, node);
-
-                node = replace;
-                continue;
+            while (replace.left !== TreeBottom) {
+                replace = replace.left;
             }
 
-            if (left !== TreeBottom) {
-                this.replaceInParent(node, left);
-            } else if (right !== TreeBottom) {
-                this.replaceInParent(node, right);
-            } else {
-                this.replaceInParent(node, TreeBottom);
-            }
-            
-            if (this.first === node) {
-                this.first = this.rightOfNode(node);
-            }
-            
-            if (this.last === node) {
-                this.last = this.leftOfNode(node);
+            const keys = replace.keys;
+            replace.keys = node.keys;
+            node.keys = keys;
+
+            for (let i = keys.length - 1; i >= 0; i--) {
+                this.keyMap.set(keys[i], node);
             }
 
-            return node;
-        }
-    }
-
-    public iterateRight(node: SortTreeNode<K>, iter: (node: SortTreeNode<K>) => boolean) {
-        while (node !== TreeBottom && iter(node) !== false) {
-            node = this.rightOfNode(node);
+            node = replace;
+            left = TreeBottom;
+            right = replace.right;
         }
 
-        return node;
-    }
-    
-    public iterateLeft(node: SortTreeNode<K>, iter: (node: SortTreeNode<K>) => boolean) {
-        while (node !== TreeBottom && iter(node) !== false) {
-            node = this.leftOfNode(node);
+        if (left !== TreeBottom) {
+            this.replaceInParent(node, left);
+        } else if (right !== TreeBottom) {
+            this.replaceInParent(node, right);
+        } else {
+            this.replaceInParent(node, TreeBottom);
         }
+        
+        if (this.first === node) {
+            this.first = this.rightOfNode(node);
+        }
+        
+        if (this.last === node) {
+            this.last = this.leftOfNode(node);
+        }
+
+        node.left = TreeBottom;
+        node.right = TreeBottom;
+        node.parent = TreeBottom;
 
         return node;
     }

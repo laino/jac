@@ -71,10 +71,12 @@ export class Dimension {
 
     public isBounds(index: number) {
         const tree = this.tree;
-        return tree.first.key === index || tree.last.key === index;
+        return tree.firstKey() === index || tree.lastKey() === index;
     }
     
     public range(x: number, y: number): PointWeight[] {
+        return [];
+        /*
         const cloud = this.cloud;
         const tree = this.tree;
         const points = cloud.points;
@@ -99,6 +101,7 @@ export class Dimension {
 
             return true;
         });
+        */
 
         /*
         // We didn't enclose any point
@@ -166,9 +169,9 @@ export class Dimension {
                 weights.push(PointWeight(sorted[i], ratio - 0.5));
             }
         }
-        */
 
         return weights;
+        */
     }
 
     /*
@@ -194,12 +197,6 @@ export class Dimension {
         return (x - A[this.n]) / d;
     }
     */
-
-    public nodeLT(x: number) {
-        const tree = this.tree;
-
-        return tree.first;
-    }
 }
 
 export class Cloud {
@@ -290,13 +287,13 @@ export class Cloud {
             return this.numPoints - 1;
         }
 
-        const result = dimensions[1].tree.getKey(X);
+        const result = dimensions[1].tree.getKeys(X);
 
-        if (result === undefined) {
+        if (result.length === 0) {
             return -1;
         }
 
-        return result;
+        return result[0];
     }
 
     public ranges(ranges: NumberArrayLike[]) {
@@ -421,8 +418,8 @@ export class Cloud {
             // We're not supposed to be called with bounding points,
             // so we don't check whether these exist here
 
-            const right = tree.keys(P).next().value;
-            const left = tree.keysReversed(P).next().value;
+            const right = tree.keysFromKey(index).next().value;
+            const left = tree.keysReversedFromKey(index).next().value;
 
             const R = points[right];
             const L = points[left];
@@ -613,8 +610,8 @@ export class Cloud {
         for (let i = dimensions.length - 1; i >= 0; i--) {
             const tree = dimensions[i].tree;
 
-            const min = points[tree.first.key][i];
-            const max = points[tree.last.key][i];
+            const min = points[tree.firstKey()][i];
+            const max = points[tree.lastKey()][i];
 
             let rD = max - min;
 

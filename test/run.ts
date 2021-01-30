@@ -1,6 +1,6 @@
 
 import * as jac from 'jac';
-import { SetSortTree, SortTreeNode } from 'sort-tree';
+import { ArraySortTree, SortTreeNode } from 'sort-tree';
 
 // just a playground for active development right now
 
@@ -10,13 +10,13 @@ testTree();
 function printNode(node: SortTreeNode<number>, depth = 0) {
     const indent = Array(depth).fill(' ').join('');
     
-    if (node.left.key !== undefined) {
+    if (node.left.keys.length) {
         printNode(node.left, depth + 1);
     }
 
-    console.log(`${indent}${node.key}`);
+    console.log(`${indent}${node.keys.join(' ')}`);
 
-    if (node.right.key !== undefined) {
+    if (node.right.keys.length) {
         printNode(node.right, depth + 1);
     }
 }
@@ -38,23 +38,26 @@ function add(sum: Record<string, number>, add: Record<string, number>) {
 }
 
 function testTree() {
-    const tree = new SetSortTree((a: number, b: number) => {
+    const arr = [0, 0, 0, 1, 1, 1, 2, 2, 2];
+    const tree = new ArraySortTree(arr, (a: number, b: number) => {
         return b - a;
     });
 
     tree.update(3);
+    tree.update(4);
     tree.update(5);
-    tree.update(9);
+    tree.update(0);
     tree.update(1);
-    tree.update(5);
-    tree.update(10);
-    tree.update(1);
+    tree.update(2);
+    tree.update(6);
+    tree.update(7);
+    tree.update(8);
 
-    console.log('min', tree.first.key, 'max', tree.last.key);
+    console.log('min', tree.firstKey(), 'max', tree.lastKey());
 
     printNode(tree.root);
 
-    for (const k of tree.keys(11, false)){
+    for (const k of tree.keysReversedFromValue(0.1, false)){
         console.log(k);
     }
 }
