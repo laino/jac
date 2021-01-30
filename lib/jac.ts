@@ -1,84 +1,57 @@
 
-import * as math from 'math';
+import {Cloud, CloudSettings} from 'cloud';
 
 export type JACValue = number;
 
-export interface JACData {
-    [key: string]: JACValue
-}
+export type JACData<D extends string = string> = Record<D, number>;
 
-export interface JACInsertOptions {
-    num?: number;
-}
-
-export interface JACSettings {
-    maxPoints: number
-    volumeKey: string
-}
-
-const DEFAULTS: JACSettings = {
-    maxPoints: 100,
-    volumeKey: 'volume'
-};
-
-export class JAC {
-    public keys: Record<string, number> = {};
-    public keyArray: string[] = []; 
+export class JAC<D extends string> {
+    public dimensions: D[]; 
     
-    public cloud: math.Cloud;
-    public settings: JACSettings;
+    public cloud: Cloud;
 
-    public constructor(settings: Partial<JACSettings> = {}) {
-        this.settings = Object.assign({}, DEFAULTS, settings);
+    public constructor(settings: CloudSettings, volumeDimension: D, ...otherDimensions: D[]) {
+        this.cloud = new Cloud(settings);
 
-        this.cloud = new math.Cloud(this.settings);
+        this.dimensions = [volumeDimension];
         
-        this.keys[this.settings.volumeKey] = 0;
-        this.keyArray.push(this.settings.volumeKey);
+        for (const dimension of otherDimensions) {
+            this.cloud.addDimension();
+            this.dimensions.push(dimension);
+        }
     }
     
-    public add(data: JACData) {
+    public add(data: JACData<D>) {
         const arr = this.dataToArray(data);
 
         this.cloud.add(arr);
     }
 
-    public getData() {
+    public getData(): JACData<D>[] {
         return this.cloud.getPoints().map(P => this.arrayToData(P));
     }
 
-    public dataToArray(data: JACData): Float64Array {
-        const arr = new Float64Array(this.keyArray.length);
+    public dataToArray(data: JACData<D>): Float64Array {
+        const dimensions = this.dimensions;
 
-        for (const [k, v] of Object.entries(data)) {
-            if (!this.keys.hasOwnProperty(k)) {
-                this.addDimension(k);
+        const arr = new Float64Array(dimensions.length);
 
-                return this.dataToArray(data);
-            }
-
-            arr[this.keys[k]] = v;
+        for (let i = 0; i < dimensions.length; i++) {
+            arr[i] = data[dimensions[i]] || 0;
         }
 
         return arr;
     }
     
-    public arrayToData(arr: math.NumberArrayLike): JACData {
-        const data = {};
+    public arrayToData(arr: Float64Array): JACData<D> {
+        const data = {} as JACData<D>;
 
-        for (let i = 0; i < arr.length; i++) {
-            data[this.keyArray[i]] = arr[i];
+        const dimensions = this.dimensions;
+        
+        for (let i = 0; i < dimensions.length; i++) {
+            data[dimensions[i]] = arr[i];
         }
 
         return data;
     }
-
-    public addDimension(key: string) {
-        const i = this.cloud.addDimension();
-
-        this.keys[key] = i;
-        this.keyArray[i] = key;
-
-        return i;
-    }    
 }
