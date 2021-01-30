@@ -79,7 +79,8 @@ export abstract class SortTree<K, V> implements Iterable<K> {
             }
         }
 
-        this.insertNode(k, node);
+        node = this.insertNode(this.root, k, node);    
+        this.keyMap.set(k, node);
     }
     
     public remove(k: K) {
@@ -119,25 +120,21 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     }
 
     public firstKey() {
-        if (this.first !== TreeBottom) {
-            return this.first.keys[0];
-        }
+        return this.first.keys[0];
     }
     
     public lastKey() {
-        if (this.last !== TreeBottom) {
-            const keys = this.last.keys;
-            return keys[keys.length - 1];
-        }
+        const keys = this.last.keys;
+        return keys[keys.length - 1];
     }
 
     public keys() {
-        return this.iterator(this.first, false, 0);
+        return new SortTreeIterator(this, this.first, false, 0);
     }
 
     public keysReversed() {
         const node = this.last;
-        return this.iterator(node, true, node.keys.length - 1);
+        return new SortTreeIterator(this, node, true, node.keys.length - 1);
     }
     
     public keysFromKey(key: K, inclusive = false) {
@@ -148,12 +145,12 @@ export abstract class SortTree<K, V> implements Iterable<K> {
             kIndex++;
 
             if (kIndex === node.keys.length) {
-                node = this.rightOfNode(node);
+                node = this._rightOfNode(node);
                 kIndex = 0;
             }
         }
 
-        return this.iterator(node, false, kIndex);
+        return new SortTreeIterator(this, node, false, kIndex);
     }
      
     public keysReversedFromKey(key: K, inclusive = false) {
@@ -163,73 +160,28 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         if (!inclusive) {
             kIndex--;
             if (kIndex === -1) {
-                node = this.leftOfNode(node);
+                node = this._leftOfNode(node);
                 kIndex = node.keys.length - 1;
             }
         }
 
-        return this.iterator(node, true, kIndex);
+        return new SortTreeIterator(this, node, true, kIndex);
     }
     
     public keysFromValue(start: V, inclusive = false) {
         const node = this.findGT(this.root, start, inclusive);
-        return this.iterator(node, false, 0);
+        return new SortTreeIterator(this, node, false, 0);
     }
     
     public keysReversedFromValue(start: V, inclusive = false) {
         const node = this.findLT(this.root, start, inclusive);
-        return this.iterator(node, true, node.keys.length - 1);
+        return new SortTreeIterator(this, node, true, node.keys.length - 1);
     }
      
     public [Symbol.iterator](): Iterator<K> {
         return this.keys();
     };
-    
-    private iterator(node: SortTreeNode<K>, reverse: boolean, nodeIndex: number) {
-        // We want to do this work only when asked to,
-        // that's why we walk the tree starting only on the second invocation,
-        // before returning, instead of after every one
-        let second = false;
-
-        return {
-            next: () => {
-                if (second) {
-                    if (reverse) {
-                        nodeIndex--;
-                        if (nodeIndex === -1) {
-                            node = this.leftOfNode(node);
-                            nodeIndex = node.keys.length - 1;
-                        }
-                    } else {
-                        nodeIndex++;
-
-                        if (nodeIndex === node.keys.length) {
-                            node = this.rightOfNode(node);
-                            nodeIndex = 0;
-                        }
-                    }
-                }
-
-                second = true;
-
-                if (node === TreeBottom) {
-                    return {
-                        done: true,
-                        value: undefined
-                    };
-                }
-
-                return {
-                    done: false,
-                    value: node.keys[nodeIndex]
-                };
-            },
-            [Symbol.iterator]() {
-                return this;
-            }
-        };
-    }
-    
+     
     private findNode(value: V, compare: CompareFunction<V>): SortTreeNode<K> {
         let node = this.root;
 
@@ -337,12 +289,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         }
     }
     
-    private insertNode(key: K, node?: SortTreeNode<K>) {
-        node = this._insert(this.root, key, node);    
-        this.keyMap.set(key, node);
-    }
-    
-    private _insert(root: SortTreeNode<K>, key: K, node?: SortTreeNode<K>) {
+    private insertNode(root: SortTreeNode<K>, key: K, node?: SortTreeNode<K>) {
         if (this.root === TreeBottom) {
             if (!node) {
                 node = createNode([key]);
@@ -450,11 +397,11 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         }
         
         if (this.first === node) {
-            this.first = this.rightOfNode(node);
+            this.first = this._rightOfNode(node);
         }
         
         if (this.last === node) {
-            this.last = this.leftOfNode(node);
+            this.last = this._leftOfNode(node);
         }
 
         node.left = TreeBottom;
@@ -464,7 +411,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         return node;
     }
 
-    private rightOfNode(node: SortTreeNode<K>): SortTreeNode<K> {
+    public _rightOfNode(node: SortTreeNode<K>): SortTreeNode<K> {
         if (node.right === TreeBottom) {
             let parent: SortTreeNode<K>;
 
@@ -484,7 +431,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         return node;
     }
 
-    private leftOfNode(node: SortTreeNode<K>): SortTreeNode<K> {
+    public _leftOfNode(node: SortTreeNode<K>): SortTreeNode<K> {
         if (node.left === TreeBottom) {
             let parent: SortTreeNode<K>;
 
@@ -502,6 +449,72 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         }
 
         return node;
+    }
+}
+
+class SortTreeIterator<K, V> implements Iterator<K>, Iterable<K> {
+    // We want to do work only when asked to,
+    // that's why we walk the tree starting only on the second invocation,
+    // before returning, instead of after every one
+    private second: boolean;
+    private tree: SortTree<K, V>;
+    private node: SortTreeNode<K>;
+    private reverse: boolean;
+    private nodeIndex: number;
+
+    public constructor(
+        tree: SortTree<K, V>,
+        node: SortTreeNode<K>,
+        reverse: boolean,
+        nodeIndex: number
+    ) {
+
+        this.tree = tree;
+        this.node = node;
+        this.reverse = reverse;
+        this.nodeIndex = nodeIndex;
+    }
+
+    public next() {
+        let node = this.node;
+        let index = this.nodeIndex;
+
+        if (this.second) {
+            if (this.reverse) {
+                index--;
+                if (index === -1) {
+                    this.node = node = this.tree._leftOfNode(node);
+                    index = node.keys.length - 1;
+                }
+            } else {
+                index++;
+
+                if (index === node.keys.length) {
+                    this.node = node = this.tree._rightOfNode(node);
+                    index = 0;
+                }
+            }
+
+            this.nodeIndex = index;
+        } else {
+            this.second = true;
+        }
+
+        if (node === TreeBottom) {
+            return {
+                done: true,
+                value: undefined
+            };
+        }
+        
+        return {
+            done: false,
+            value: node.keys[index]
+        };
+    }
+
+    [Symbol.iterator]() {
+        return this;
     }
 }
 
