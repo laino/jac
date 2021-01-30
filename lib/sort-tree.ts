@@ -171,7 +171,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     /*
      * Finds the biggest node that is less than (or equal to) value.
      */
-    private findLT(parent: SortTreeNode<K>, value: V, equal = false) {
+    private findLT(parent: SortTreeNode<K>, value: V, equal: boolean) {
         const cmp = this.cmp;
 
         let greatest: SortTreeNode<K> = TreeBottom;
@@ -179,11 +179,11 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         while (true) {
             const side = cmp(this.get(parent.key), value);
 
-            if (equal && side === 0) {
-                return parent;
-            }
-
             if (side <= 0) {
+                if (equal && side === 0) {
+                    return parent;
+                }
+
                 if (parent.left === TreeBottom) {
                     return greatest;
                 }
@@ -203,7 +203,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     /*
      * Finds the smallest node that is greater than (or equal to) value.
      */
-    private findGT(parent: SortTreeNode<K>, value: V, equal = false) {
+    private findGT(parent: SortTreeNode<K>, value: V, equal: boolean) {
         const cmp = this.cmp;
 
         // greatest node found
@@ -211,18 +211,6 @@ export abstract class SortTree<K, V> implements Iterable<K> {
 
         while (true) {
             const side = cmp(this.get(parent.key), value);
-
-            if (equal && side === 0) {
-                // Walk to the leftmost node still matching the
-                // condition
-                smallest = parent;
-                while ((parent = parent.left) !== TreeBottom &&
-                       cmp(this.get(parent.key), value) === 0) {
-
-                    smallest = parent;
-                }
-                return smallest;
-            }
 
             if (side < 0) {
                 if (parent.left === TreeBottom) {
@@ -232,6 +220,18 @@ export abstract class SortTree<K, V> implements Iterable<K> {
                 smallest = parent;
                 parent = parent.left;
             } else {
+                if (equal && side === 0) {
+                    // Walk to the leftmost node still matching the
+                    // condition
+                    smallest = parent;
+                    while ((parent = parent.left) !== TreeBottom &&
+                           cmp(this.get(parent.key), value) === 0) {
+
+                        smallest = parent;
+                    }
+                    return smallest;
+                }
+
                 if (parent.right === TreeBottom) {
                     return smallest;
                 }

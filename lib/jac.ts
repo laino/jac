@@ -37,7 +37,7 @@ export class JAC<D extends string> {
         const arr = new Float64Array(dimensions.length);
 
         for (let i = 0; i < dimensions.length; i++) {
-            arr[i] = data[dimensions[i]] || 0;
+            arr[i] = data[dimensions[i]];
         }
 
         return arr;
