@@ -90,11 +90,13 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         return this.findNode(value, this.cmp).key;
     }
 
+    // TODO: performance improvements possible
+    // Currently this is about 30% of CPU time for inserting
+    // into 500 key sets
     public keys(start: V = undefined, inclusive = false) {
         let node: SortTreeNode<K>;
 
         if (start) {
-            // TODO: performance improvements possible
             const cmp = this.cmp;
             const result = this.findLeaf(this.root, start);
             node = result.parent;

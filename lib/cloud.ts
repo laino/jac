@@ -441,14 +441,15 @@ export class Cloud {
         return totalAngle;
     }
 
-    // Distributes the point at index to all others
-    // while preserving totals
+    // Distributes the point at index to others while preserving totals
+    // TODO Currently about 50% of CPU time for insertions is spent here
     private distribute(index: number) {
         const dimensions = this.dimensions;
+        const dlen = dimensions.length;
         const points = this.points;
         let l = this.numPoints;
 
-        const tmp = new Float64Array(dimensions.length);
+        const tmp = new Float64Array(dlen);
 
         const P = points[index];
         const weights = this.weights(P, P);
@@ -463,7 +464,7 @@ export class Cloud {
 
             const combinedV = P2[0] + V;
             
-            for (let i2 = 1; i2 < dimensions.length; i2++) {
+            for (let i2 = dlen - 1; i2 >= 0; i2--) {
                 tmp[i2] = ((P2[i2] * P2[0]) + (P[i2] * V)) / combinedV;
             }
             
@@ -609,7 +610,7 @@ export class Cloud {
         const dimensions = this.dimensions;
         const points = this.points;
 
-        for (let i = 1; i < dimensions.length; i++) {
+        for (let i = dimensions.length - 1; i >= 0; i--) {
             const tree = dimensions[i].tree;
 
             const min = points[tree.first.key][i];
