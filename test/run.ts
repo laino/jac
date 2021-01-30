@@ -63,7 +63,7 @@ function testTree() {
 }
 
 function testCloud() {
-    const cloud = new jac.JAC({maxPoints: 1000}, 'volume', 'x', 'y');
+    const cloud = new jac.JAC({maxPoints: 300}, 'volume', 'x', 'y');
 
     const sum: Record<string, number> = {};
 

@@ -186,8 +186,32 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     };
     
     private iterator(node: SortTreeNode<K>, reverse: boolean, nodeIndex: number) {
+        // We want to do this work only when asked to,
+        // that's why we walk the tree starting only on the second invocation,
+        // before returning, instead of after every one
+        let second = false;
+
         return {
             next: () => {
+                if (second) {
+                    if (reverse) {
+                        nodeIndex--;
+                        if (nodeIndex === -1) {
+                            node = this.leftOfNode(node);
+                            nodeIndex = node.keys.length - 1;
+                        }
+                    } else {
+                        nodeIndex++;
+
+                        if (nodeIndex === node.keys.length) {
+                            node = this.rightOfNode(node);
+                            nodeIndex = 0;
+                        }
+                    }
+                }
+
+                second = true;
+
                 if (node === TreeBottom) {
                     return {
                         done: true,
@@ -195,27 +219,10 @@ export abstract class SortTree<K, V> implements Iterable<K> {
                     };
                 }
 
-                const result = {
+                return {
                     done: false,
                     value: node.keys[nodeIndex]
                 };
-
-                if (reverse) {
-                    nodeIndex--;
-                    if (nodeIndex === -1) {
-                        node = this.leftOfNode(node);
-                        nodeIndex = node.keys.length - 1;
-                    }
-                } else {
-                    nodeIndex++;
-
-                    if (nodeIndex === node.keys.length) {
-                        node = this.rightOfNode(node);
-                        nodeIndex = 0;
-                    }
-                }
-
-                return result;
             },
             [Symbol.iterator]() {
                 return this;
