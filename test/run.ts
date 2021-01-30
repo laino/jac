@@ -1,6 +1,6 @@
 
 import * as jac from 'jac';
-import { SortTree, SortTreeNode } from 'sort-tree';
+import { SetSortTree, SortTreeNode } from 'sort-tree';
 
 function printNode(node: SortTreeNode<number>, depth = 0) {
     const indent = Array(depth).fill(' ').join('');
@@ -32,42 +32,7 @@ function add(sum: Record<string, number>, add: Record<string, number>) {
     }
 }
 
-/*
-const cloud = new jac.JAC({maxPoints: 5}, 'volume', 'x');
-
-cloud.add({
-    x: 0,
-    volume: 1,
-});
-
-cloud.add({
-    x: 1,
-    volume: 10,
-});
-
-cloud.add({
-    x: 2,
-    volume: 1,
-});
-
-cloud.add({
-    x: 3,
-    volume: 20,
-});
-
-cloud.add({
-    x: 4,
-    volume: 1,
-});
-
-cloud.add({
-    x: 99,
-    volume: 100
-});
-
-console.log(cloud.getData());
-
-const tree = new SortTree((a: number, b: number) => {
+const tree = new SetSortTree((a: number, b: number) => {
     return b - a;
 });
 
@@ -75,18 +40,19 @@ tree.update(3);
 tree.update(5);
 tree.update(9);
 tree.update(1);
-
-tree.remove(1);
-tree.remove(3);
-tree.remove(5);
-tree.remove(9);
+tree.update(5);
+tree.update(10);
+tree.update(1);
 
 console.log('min', tree.first.key, 'max', tree.last.key);
 
 printNode(tree.root);
-*/
 
-const cloud = new jac.JAC({maxPoints: 500}, 'volume', 'x', 'y');
+for (const k of tree.keys(11, false)){
+    console.log(k);
+}
+
+const cloud = new jac.JAC({maxPoints: 300}, 'volume', 'x', 'y', 'z');
 
 const sum: Record<string, number> = {};
 
@@ -96,6 +62,7 @@ for (let i = 0; i < 10000; i++) {
         volume: 1,
         x: Math.random(),
         y: Math.random(),
+        z: Math.random(),
     };
 
     cloud.add(obj);
