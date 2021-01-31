@@ -173,7 +173,37 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         return node.keys[kIndex];
     }
     
-    public keyWithNextValue(key: K) {
+    public keysWithSameValue(key: K): K[] {
+        let node = this.keyMap.get(key);
+
+        if (!node) {
+            return;
+        }
+
+        return node.keys;
+    }
+    
+    public keysWithNextValue(key: K): K[] {
+        let node = this.keyMap.get(key);
+
+        if (!node) {
+            return;
+        }
+
+        return rightOfNode(node).keys;
+    }
+    
+    public keysWithPreviousValue(key: K): K[] {
+        let node = this.keyMap.get(key);
+
+        if (!node) {
+            return;
+        }
+
+        return leftOfNode(node).keys;
+    }
+    
+    public keyWithNextValue(key: K): K {
         let node = this.keyMap.get(key);
 
         if (!node) {
@@ -183,14 +213,16 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         return rightOfNode(node).keys[0];
     }
     
-    public keyWithPreviousValue(key: K) {
+    public keyWithPreviousValue(key: K): K {
         let node = this.keyMap.get(key);
 
         if (!node) {
             return;
         }
 
-        return leftOfNode(node).keys[0];
+        const keys = leftOfNode(node).keys;
+
+        return keys[keys.length - 1];
     }
 
     public keys() {

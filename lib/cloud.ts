@@ -1,6 +1,6 @@
 
 import { ArraySortTree } from 'sort-tree';
-import { Point, NumberArrayLike, angle, round } from 'math';
+import { Point, NumberArrayLike, angle, round, area } from 'math';
 
 export interface PointWeight {
     P: Point,
@@ -122,7 +122,6 @@ export class Dimension {
                 }
             }
 
-            console.log('same', weights);
             return weights;
         }
 
@@ -384,7 +383,7 @@ export class Cloud {
     public point(d: Float64Array): Selection {
         const points = this.points;
 
-        const weights = this.weights(d);
+        const weights = this.pointWeights(d);
 
         const selection = new Map<Point, number>();
 
@@ -401,34 +400,92 @@ export class Cloud {
     }
  
     private simplify(): number {
-        // The higher the angle a point spans towards its neighbours,
+        // The smaller the area a point encloses with its neighbours,
         // the closer it is to their interpolated values
-        let highestAngle = 0;
-        let highestAngleIndex = -1;
+        let smallestArea = Infinity;
+        let smallestAreaIndex = -1;
 
         for (let i = this.numPoints - 1; i >= 0; i--) {
             if (this.isBounds(i)) {
                 continue;
             }
 
-            const angle = this.angle(i);
+            const area = this.area(i);
 
-            if (angle >= highestAngle) {
-                highestAngle = angle;
-                highestAngleIndex = i;
+            if (area <= smallestArea) {
+                smallestArea = area;
+                smallestAreaIndex = i;
             }
         }
 
-        if (highestAngleIndex !== -1) {
-            this.distribute(highestAngleIndex);
+        if (smallestAreaIndex !== -1) {
+            this.distribute(smallestAreaIndex);
         }
 
-        return highestAngleIndex;
+        return smallestAreaIndex;
+    }
+    
+    private area(index: number) {
+        const dimensions = this.dimensions;
+        const points = this.points;
+        const P = points[index];
+
+        // Area is defined by 4 points with x,v pairs:
+        // L = (x left of P, volume left of P)
+        // S = P(Px, (volume at P))
+        // R = (x right of P, volume right of P)
+        // N = (Px, (volume at P) - (volume of P))
+        //
+        // Area = (R, S, L, N)
+        const Area = new Float64Array(8);
+        
+        let totalArea = 0;
+
+        for (let i = dimensions.length - 1; i > 0; i--) {
+            const tree = dimensions[i].tree;
+
+            // We're not supposed to be called with bounding points,
+            // so we don't check whether these exist here
+
+            const middle = tree.keysWithSameValue(index);
+            const right = tree.keysWithNextValue(index);
+            const left = tree.keysWithPreviousValue(index);
+
+            Area[0] = points[left[0]][i]; // Lx
+            Area[1] = 0; // Lv
+            Area[2] = P[i]; // Sx = Px
+            Area[3] = 0; // Sv
+            Area[4] = points[right[0]][i]; // Rx
+            Area[5] = 0; // Rv
+
+            for (const k of left) {
+                Area[1] += points[k][0]; // Lv
+            }
+            
+            for (const k of middle) {
+                Area[3] += points[k][0]; // Sv
+            }
+
+            for (const k of right) {
+                Area[5] += points[k][0]; // Rv
+            }
+
+            if (middle.length > 1) {
+                Area[6] = P[i]; // Sx
+                Area[7] = Area[3] - P[0];
+                totalArea += Math.abs(area(Area, 0, 8));
+            } else {
+                totalArea += Math.abs(area(Area, 0, 6));
+            }
+        }
+
+        return totalArea;
     }
 
     private angle(index: number) {
         const dimensions = this.dimensions;
         const points = this.points;
+
         const P = points[index];
 
         let totalAngle = 0;
@@ -442,20 +499,41 @@ export class Cloud {
             // We're not supposed to be called with bounding points,
             // so we don't check whether these exist here
 
-            const right = tree.keyRightOfKey(index);
-            const left = tree.keyLeftOfKey(index);
+            const middle = tree.keysWithSameValue(index);
+            const right = tree.keysWithNextValue(index);
+            const left = tree.keysWithPreviousValue(index);
 
-            const R = points[right];
-            const L = points[left];
+            tmpA[0] = 0;
+            tmpA[1] = points[left[0]][i] - P[i];
 
-            tmpA[0] = R[0] - P[0];
-            tmpA[1] = R[i] - P[i];
+            tmpB[1] = 0;
+            tmpB[1] = points[right[0]][i] - P[i];
+            
+            for (const k of left) {
+                tmpA[0] += points[k][0];
+            }
+            
+            for (const k of right) {
+                tmpB[0] += points[k][0];
+            }
 
-            tmpB[0] = L[0] - P[0];
-            tmpB[1] = L[i] - P[i];
+            let totalMiddleVolume = 0;
+            
+            for (const k of middle) {
+                totalMiddleVolume = points[k][0];
+            }
 
-            // TODO for performance we might want to calculate this inline
-            totalAngle += angle(tmpA, tmpB);
+            tmpA[0] -= totalMiddleVolume;
+            tmpB[0] -= totalMiddleVolume;
+
+            const angleWith = angle(tmpA, tmpB);
+
+            tmpA[0] += P[0];
+            tmpB[0] += P[0];
+
+            const angleWithout = angle(tmpB, tmpB);
+
+            totalAngle += Math.abs(angleWith - angleWithout);
         }
 
         // averaging would be pointless, since it's only used for comparison
@@ -473,7 +551,7 @@ export class Cloud {
         const tmp = new Float64Array(dlen);
 
         const P = points[index];
-        const weights = this.weights(P);
+        const weights = this.distributeWeights(P);
 
         for (let i = 0; i < l; i++) {
             const P2 = points[i];
@@ -533,8 +611,40 @@ export class Cloud {
             }
         }
     }
+    
+    private distributeWeights(d: NumberArrayLike) {
+        const points = this.points;
+        const weights = new Float64Array(this.numPoints);
 
-    private weights(d: NumberArrayLike) {
+        let sum = 0;
+
+        const l = this.numPoints;
+
+        for (let i = 0; i < l; i++) {
+            const P = points[i];
+
+            if (this.isBounds(i)) {
+                continue;
+            }
+
+            const dist = this.distance(P, d);
+
+            if (dist !== 0) {
+                const w = P[0] / dist;
+                weights[i] = w;
+                sum += w;
+            }
+        }
+
+        const sumInv = 1 / sum;
+        for (let i = 0; i < l; i++) {
+            weights[i] *= sumInv;
+        }
+
+        return weights;
+    }
+
+    private pointWeights(d: NumberArrayLike) {
         const points = this.points;
         const weights = new Float64Array(this.numPoints);
 
@@ -575,7 +685,7 @@ export class Cloud {
         const dimensions = this.dimensions;
         const points = this.points;
 
-        for (let i = dimensions.length - 1; i >= 0; i--) {
+        for (let i = dimensions.length - 1; i > 0; i--) {
             const tree = dimensions[i].tree;
 
             const min = points[tree.firstKey()][i];

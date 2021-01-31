@@ -59,6 +59,24 @@ export function dot(A: NumberArrayLike, B: NumberArrayLike) {
     return dot;
 }
 
+// Area of a 2D polygon defined by P in form [x1,y1,x2,y2,...]
+// using the shoelace formula
+export function area(P: NumberArrayLike, start: number, end: number) {
+    let sum = P[end - 2] * P[start + 1] - P[start] * P[end - 1];
+
+    for (let i = end - 4; i>=start; i-=2) {
+        const x0 = P[i];
+        const y0 = P[i+1];
+        const x1 = P[i+2];
+        const y1 = P[i+3];
+
+        sum += x0*y1 - x1*y0;
+    }
+
+    return sum / 2;
+}
+
+
 export function norm(A: NumberArrayLike) {
     return Math.sqrt(dot(A,A));
 }

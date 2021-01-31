@@ -1,7 +1,6 @@
 
 import * as jac from 'jac';
 import { SetSortTree, ArraySortTree, SortTreeNode } from 'sort-tree';
-import { round } from 'math';
 
 // just a playground for active development right now
 
@@ -10,7 +9,7 @@ testJACStress();
 //testArrayTree();
 //testSetTree();
 
-//testCloud();
+//testJAC();
 
 //testTreeStress();
 
@@ -43,14 +42,6 @@ function add(sum: Record<string, number>, add: Record<string, number>) {
         }
     }
     
-    return sum;
-}
-
-function roundSum(sum: Record<string, number>) {
-    for (let [k, v] of Object.entries(sum)) {
-        sum[k] = round(v);
-    }
-
     return sum;
 }
 
@@ -141,15 +132,50 @@ function testArrayTree() {
     tree.validate();
 }
 
-function testCloud() {
-    const cloud = new jac.JAC({maxPoints: 4}, 'volume', 'x');
+function testJAC() {
+    const cloud = new jac.JAC({maxPoints: 6}, 'v', 'x', 'y');
 
-    for (let i = 0; i < 10; i++) {
-        cloud.add({
-            volume: 1,
-            x: i,
-        });
-    }
+    cloud.add({
+        v: 1,
+        x: 0,
+        y: 0
+    });
+    
+    cloud.add({
+        v: 0,
+        x: 1,
+        y: 1
+    });
+    
+    cloud.add({
+        v: 1,
+        x: 2,
+        y: 3
+    });
+    
+    cloud.add({
+        v: 2,
+        x: 3,
+        y: 2
+    });
+    
+    cloud.add({
+        v: 1,
+        x: 4,
+        y: 4
+    });
+    
+    cloud.add({
+        v: 5,
+        x: 5,
+        y: 5
+    });
+
+    cloud.add({
+        v: 0,
+        x: 99999,
+        y: 99999
+    });
 
     console.log(cloud.getData());
 }
@@ -184,6 +210,6 @@ function testJACStress() {
         add(sum2, p);
     }
 
-    console.log(roundSum(sum));
-    console.log(roundSum(sum2));
+    console.log(sum);
+    console.log(sum2);
 }
