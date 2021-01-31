@@ -65,17 +65,26 @@ export function area(P: NumberArrayLike, start: number, end: number) {
     let sum = P[end - 2] * P[start + 1] - P[start] * P[end - 1];
 
     for (let i = end - 4; i>=start; i-=2) {
-        const x0 = P[i];
-        const y0 = P[i+1];
-        const x1 = P[i+2];
-        const y1 = P[i+3];
-
-        sum += x0*y1 - x1*y0;
+        sum += P[i]*P[i+3] - P[i+2]*P[i+1];
     }
 
     return sum / 2;
 }
 
+// Unrolled variant of area for 3 points;
+export function area3(P: NumberArrayLike) {
+    return P[0] * P[3] - P[2] * P[1] +
+           P[2] * P[5] - P[4] * P[3] +
+           P[4] * P[1] - P[0] * P[5];
+}
+
+// Unrolled variant of area for 4 points;
+export function area4(P: NumberArrayLike) {
+    return P[0] * P[3] - P[2] * P[1] +
+           P[2] * P[5] - P[4] * P[3] +
+           P[4] * P[7] - P[6] * P[5] +
+           P[6] * P[1] - P[0] * P[7];
+}
 
 export function norm(A: NumberArrayLike) {
     return Math.sqrt(dot(A,A));

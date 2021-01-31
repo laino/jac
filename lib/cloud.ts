@@ -1,6 +1,6 @@
 
 import { ArraySortTree } from 'sort-tree';
-import { Point, NumberArrayLike, angle, round, area } from 'math';
+import { Point, NumberArrayLike, round, area3, area4 } from 'math';
 
 export interface PointWeight {
     P: Point,
@@ -70,13 +70,13 @@ export class Dimension {
         return tree.firstKey() === index || tree.lastKey() === index;
     }
     
-    public range(X: Point, Y: Point): PointWeight[] {
+    public range(X: Point, Y: Point): [number,number][] {
         const cloud = this.cloud;
         const tree = this.tree;
         const points = cloud.points;
         const n = this.n;
 
-        const weights: PointWeight[] = [];
+        const weights: [number,number][] = [];
 
         // list of weight indexes at which values change,
         // since the same value may be repeated
@@ -105,7 +105,7 @@ export class Dimension {
                 lastStep = P;
             }
              
-            weights.push(PointWeight(P, 1));
+            weights.push([key, 1]);
 
             if (key === end) {
                 break;
@@ -115,10 +115,10 @@ export class Dimension {
         if (steps.length === 1) {
             // All points have the same value.
             for (let weight of weights) {
-                const Pv = weight.P[n];
+                const Pv = points[weight[0]][n];
 
                 if (Pv < XValue || Pv > YValue) {
-                    weight.w = 0;
+                    weight[1] = 0;
                 }
             }
 
@@ -126,54 +126,60 @@ export class Dimension {
         }
 
         for (let i = 0; i < steps.length; i++) {
-            const stepIndex = steps[i];
-            const current = weights[stepIndex];
+            const start = steps[i];
+            const current = weights[start];
 
             let A: number;
             let C: number;
-            const B = current.P[n];
+            const B = points[current[0]][n];
             
             let end = 0;
 
             if (i === 0) {
                 end = steps[i+1];
-                C = weights[end].P[n];
+                C = points[weights[end][0]][n];
                 A = B + (B - C);
             } else if (i + 1 === steps.length) {
                 end = weights.length;
-                A = weights[steps[i-1]].P[n];
+                A = points[weights[steps[i-1]][0]][n];
                 C = B + (B - A);
             } else {
                 end = steps[i+1];
-                A = weights[steps[i-1]].P[n];
-                C = weights[end].P[n];
+                A = points[weights[steps[i-1]][0]][n];
+                C = points[weights[end][0]][n];
             }
 
             const volume = this.interpolate2(XValue, YValue, A, B, C);
 
-            for (let i2 = stepIndex; i2 < end; i2++) {
-                weights[i2].w = volume;
+            for (let i2 = start; i2 < end; i2++) {
+                weights[i2][1] = volume;
             }
         }
-
-        console.log(weights);
 
         return weights;
     }
 
-    // A, B, C are x-axis-values defining a curve that encloses a volume of 1 with the x-axis.
-    //
-    // Returns the volume to the left of x.
+    /*
+     * A, B, C are x-axis-values defining a curve that encloses a volume of 1 with the x-axis.
+     * Returns the volume to the left of x.
+     *
+     * Basically a cumulative distribution function.
+     *
+     * TODO make this user-configurable
+     */
     private interpolate(x: number, A: number, B: number, C: number): number {
         if (x > B) {
-            return Math.min(1, ((x - B) / (C - B) / 2) + 0.5);
+            const p = Math.pow((x - B) / (C - B), 1/2);
+            return Math.min(1, (1 + p) / 2);
         }
 
-        return Math.max(0, (x - A) / (B - A) / 2);
+        const p = Math.pow((B - x) / (B - A), 1/2);
+        return Math.max(0, (1 - p) / 2);
     }
     
-    private interpolate2(x: number, y: number, A: number, B: number, C: number): number {
-        return this.interpolate(y, A, B, C) - this.interpolate(x, A, B, C);
+    private interpolate2(x: number, y: number, A: number, B: number, C: number) {
+        const r = this.interpolate(y, A, B, C) - this.interpolate(x, A, B, C);
+        return r;
     }
 }
 
@@ -235,7 +241,7 @@ export class Cloud {
     }
 
     public add(p: Point) {
-        for (let i = p.length; i >= 0; i--) {
+        for (let i = p.length; i > 0; i--) {
             p[i] = round(p[i]);
         }
 
@@ -255,23 +261,29 @@ export class Cloud {
             index = this.numPoints++;
         }
 
+        p[0] = round(p[0]);
+
         this.points[index] = p;
         
-        this.updateInDimensions(index);
+        this.updateInDimensions(index);    
     }
     
     private modify(target: number, data: Point) {
         const points = this.points;
 
-        const P = points[target];
-
-        for (let i = data.length; i >= 0; i--) {
-            P[i] = round(data[i]);
+        for (let i = data.length - 1; i > 0; i--) {
+            if (isNaN(data[i])) {
+                throw new Error('nop');
+            }
+            data[i] = round(data[i]);
         }
 
         const existing = this.getAt(data);
 
         if (existing === -1) {
+            const P = points[target];
+            data[0] = round(data[0]);
+            P.set(data);
             this.updateInDimensions(target);
             return -1;
         }
@@ -288,7 +300,6 @@ export class Cloud {
         const points = this.points;
 
         const last = this.numPoints - 1;
-        this.numPoints = last;
         
         this.removeFromDimensions(last);
 
@@ -301,6 +312,8 @@ export class Cloud {
         points[last] = old;
 
         this.updateInDimensions(target);
+        
+        this.numPoints = last;
 
         return last;
     }
@@ -317,13 +330,16 @@ export class Cloud {
         return result[0];
     }
 
-    public ranges(ranges: NumberArrayLike[]) {
-        const selection = new Map<Point, number>();
-
+    public ranges(ranges: NumberArrayLike[]): Selection {
+        const points = this.points;
         const dimensions = this.dimensions;
+        
+        const selection = new Map<number, number>();
 
         const tmpA = new Float64Array(dimensions.length);
         const tmpB = new Float64Array(dimensions.length);
+
+        let first = true;
 
         for (let i = 0; i < ranges.length; i++) {
             const rn = ranges[i];
@@ -334,50 +350,58 @@ export class Cloud {
 
             const dim = dimensions[i];
 
-            const range = new Map<Point, number>();
+            const range = new Map<number, number>();
 
             for (let i2 = 0; i2 < rn.length; i2 += 2) {
                 tmpA[i] = rn[i2];
                 tmpB[i] = rn[i2 + 1];
-                const s = dim.range(tmpA, tmpB);
+                const weights = dim.range(tmpA, tmpB);
 
                 if (i2 === 0) {
-                    for (const {P, w} of s) {
-                        range.set(P, w);
+                    for (const [index,w] of weights) {
+                        range.set(index, w);
                     }
                 } else {
-                    for (const {P, w} of s) {
-                        range.set(P, w + range.get(P));
+                    for (const [index,w] of weights) {
+                        range.set(index, w + range.get(index));
                     }
                 }
             }
 
-            if (i === 0) {
-                for (const [P, w] of range.entries()) {
-                    selection.set(P, w);
+            if (first) {
+                for (const [index, w] of range.entries()) {
+                    selection.set(index, w);
                 }
+
+                first = false;
 
                 continue;
             }
 
-            for (const [P, w] of range) {
-                if (!selection.has(P)) {
+            for (const [index, w] of range) {
+                if (!selection.has(index)) {
                     continue;
                 }
 
-                const sw = selection.get(P) * w;
+                const sw = selection.get(index) * w;
 
-                selection.set(P, sw);
+                selection.set(index, sw);
             }
 
-            for (const P of selection.keys()) {
-                if (!range.has(P)) {
-                    selection.delete(P);
+            for (const index of selection.keys()) {
+                if (!range.has(index)) {
+                    selection.delete(index);
                 }
             }
         }
+
+        const result: Selection = new Map();
+
+        for (const [index, w] of selection) {
+            result.set(points[index].slice(0), w);
+        }
         
-        return selection;
+        return result;
     }
 
     public point(d: Float64Array): Selection {
@@ -452,36 +476,37 @@ export class Cloud {
             const left = tree.keysWithPreviousValue(index);
 
             Area[0] = points[left[0]][i]; // Lx
-            Area[1] = 0; // Lv
             Area[2] = P[i]; // Sx = Px
-            Area[3] = 0; // Sv
             Area[4] = points[right[0]][i]; // Rx
-            Area[5] = 0; // Rv
 
+            Area[1] = 0; // Lv
             for (const k of left) {
                 Area[1] += points[k][0]; // Lv
             }
             
-            for (const k of middle) {
-                Area[3] += points[k][0]; // Sv
-            }
-
+            Area[5] = 0; // Rv
             for (const k of right) {
                 Area[5] += points[k][0]; // Rv
             }
 
-            if (middle.length > 1) {
+            if (middle.length === 1) {
+                Area[3] = P[0];
+                totalArea += Math.abs(area3(Area));
+            } else {
+                Area[3] = 0; // Sv
+                for (const k of middle) {
+                    Area[3] += points[k][0]; // Sv
+                }
                 Area[6] = P[i]; // Sx
                 Area[7] = Area[3] - P[0];
-                totalArea += Math.abs(area(Area, 0, 8));
-            } else {
-                totalArea += Math.abs(area(Area, 0, 6));
+                totalArea += Math.abs(area4(Area));
             }
         }
 
         return totalArea;
     }
 
+    /*
     private angle(index: number) {
         const dimensions = this.dimensions;
         const points = this.points;
@@ -539,6 +564,7 @@ export class Cloud {
         // averaging would be pointless, since it's only used for comparison
         return totalAngle;
     }
+    */
 
     // Distributes the point at index to others while preserving totals
     // TODO Currently about 50% of CPU time for insertions is spent here
@@ -601,6 +627,36 @@ export class Cloud {
         }
     }
 
+    private distributeWeights(d: NumberArrayLike) {
+        const points = this.points;
+        const weights = new Float64Array(this.numPoints);
+
+        let sum = 0;
+
+        const l = this.numPoints;
+
+        for (let i = 0; i < l; i++) {
+            const T = points[i];
+
+            const dist = this.distance(T, d);
+
+            if (dist !== 0) {
+                const w = 1 / Math.pow(dist, 2);
+                weights[i] = w;
+                sum += w;
+            }
+        }
+
+        if (sum > 0) {
+            const sumInv = 1 / sum;
+            for (let i = 0; i < l; i++) {
+                weights[i] *= sumInv;
+            }
+        }
+
+        return weights;
+    }
+    
     private isBounds(index: number) {
         const dimensions = this.dimensions;
 
@@ -612,37 +668,6 @@ export class Cloud {
         }
     }
     
-    private distributeWeights(d: NumberArrayLike) {
-        const points = this.points;
-        const weights = new Float64Array(this.numPoints);
-
-        let sum = 0;
-
-        const l = this.numPoints;
-
-        for (let i = 0; i < l; i++) {
-            const P = points[i];
-
-            if (this.isBounds(i)) {
-                continue;
-            }
-
-            const dist = this.distance(P, d);
-
-            if (dist !== 0) {
-                const w = P[0] / dist;
-                weights[i] = w;
-                sum += w;
-            }
-        }
-
-        const sumInv = 1 / sum;
-        for (let i = 0; i < l; i++) {
-            weights[i] *= sumInv;
-        }
-
-        return weights;
-    }
 
     private pointWeights(d: NumberArrayLike) {
         const points = this.points;
@@ -732,4 +757,43 @@ export function averageSelection(selection: Selection, size: number, dimensions:
     }
 
     return Rd;
+}
+
+export function sumSelection(selection: Selection, dimensions: number) {
+    let Rd = new Float64Array(dimensions);
+
+    for (const [P, w] of selection.entries()) {
+        Rd[0] += P[0] * w;
+    }
+
+    for (let i = 1; i < dimensions; i++) {
+        for (const [P, w] of selection) {
+            Rd[i] += P[i] * P[0] * w;
+        }
+    }
+
+    return Rd;
+}
+
+export function calculateError(expected: Selection, measured: Selection, dimensions: number) {
+    const sumA = sumSelection(expected, dimensions);
+    const sumB = sumSelection(measured, dimensions);
+
+    const error = new Float64Array(dimensions);
+
+    for (let i = 0; i < dimensions; i++) {
+        const r = sumA[i];
+        const m = sumB[i];
+        const d = m - r;
+
+        // Technically we should use r instead of the maximum, but
+        // this gives more 'useful' values that can be compared.
+        const max = Math.max(Math.abs(r), Math.abs(m));
+
+        if (max > Number.EPSILON) {
+            error[i] = d / max;
+        }
+    }
+
+    return error;
 }

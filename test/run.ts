@@ -5,13 +5,12 @@ import { SetSortTree, ArraySortTree, SortTreeNode } from 'sort-tree';
 // just a playground for active development right now
 
 //console.log(round(1000000.1 + 0.2 - 1000000.3));
-testJACStress();
 //testArrayTree();
 //testSetTree();
 
-//testJAC();
-
 //testTreeStress();
+
+testJACStress();
 
 function printNode(node: SortTreeNode<number>, depth = 0) {
     const indent = Array(depth).fill(' ').join('');
@@ -132,56 +131,8 @@ function testArrayTree() {
     tree.validate();
 }
 
-function testJAC() {
-    const cloud = new jac.JAC({maxPoints: 6}, 'v', 'x', 'y');
-
-    cloud.add({
-        v: 1,
-        x: 0,
-        y: 0
-    });
-    
-    cloud.add({
-        v: 0,
-        x: 1,
-        y: 1
-    });
-    
-    cloud.add({
-        v: 1,
-        x: 2,
-        y: 3
-    });
-    
-    cloud.add({
-        v: 2,
-        x: 3,
-        y: 2
-    });
-    
-    cloud.add({
-        v: 1,
-        x: 4,
-        y: 4
-    });
-    
-    cloud.add({
-        v: 5,
-        x: 5,
-        y: 5
-    });
-
-    cloud.add({
-        v: 0,
-        x: 99999,
-        y: 99999
-    });
-
-    console.log(cloud.getData());
-}
-
 function testJACStress() {
-    const cloud = new jac.JAC({maxPoints: 300}, 'volume', 'x', 'y');
+    const cloud = new jac.JAC({maxPoints: 1000}, 'volume', 'x', 'y');
 
     const sum: Record<string, number> = {};
 

@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "scripts": {
         "test": "node -r ./register-dev.js test/run.ts",
+        "error-test": "node -r ./register-dev.js test/error.ts",
         "inspect": "node --inspect --inspect-brk -r ./register-dev.js test/run.ts"
     },
     "dependencies": {
