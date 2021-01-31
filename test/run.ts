@@ -1,11 +1,15 @@
 
 import * as jac from 'jac';
-import { ArraySortTree, SortTreeNode } from 'sort-tree';
+import { SetSortTree, ArraySortTree, SortTreeNode } from 'sort-tree';
+import { round } from 'math';
 
 // just a playground for active development right now
 
+//testJACStress();
+//testArrayTree();
+//testSetTree();
+
 testCloud();
-testTree();
 
 function printNode(node: SortTreeNode<number>, depth = 0) {
     const indent = Array(depth).fill(' ').join('');
@@ -35,9 +39,40 @@ function add(sum: Record<string, number>, add: Record<string, number>) {
             sum[k] = v;
         }
     }
+    
+    return sum;
 }
 
-function testTree() {
+function roundSum(sum: Record<string, number>) {
+    for (let [k, v] of Object.entries(sum)) {
+        sum[k] = round(v);
+    }
+
+    return sum;
+}
+
+function testSetTree() {
+    const tree = new SetSortTree((a: number, b: number) => {
+        return b - a;
+    });
+
+    tree.update(0);
+    tree.update(1);
+    tree.update(2);
+    tree.update(3);
+    tree.update(4);
+    tree.update(5);
+    tree.update(-1);
+    tree.update(-2);
+    tree.update(6);
+    tree.update(7);
+
+    console.log('min', tree.firstKey(), 'max', tree.lastKey());
+
+    printNode(tree.root);
+}
+
+function testArrayTree() {
     const arr = [0, 0, 0, 1, 1, 1, 2, 2, 2];
     const tree = new ArraySortTree(arr, (a: number, b: number) => {
         return b - a;
@@ -63,6 +98,30 @@ function testTree() {
 }
 
 function testCloud() {
+    const cloud = new jac.JAC({maxPoints: 300}, 'volume', 'x', 'y');
+
+    cloud.add({
+        volume: 1,
+        x: 1,
+        y: 1
+    });
+
+    cloud.add({
+        volume: 1,
+        x: 2,
+        y: 2,
+    });
+    
+    cloud.add({
+        volume: 1,
+        x: 3,
+        y: 3
+    });
+
+    console.log(cloud.cloud.ranges([,[-10, 1.8]]));
+}
+
+function testJACStress() {
     const cloud = new jac.JAC({maxPoints: 300}, 'volume', 'x', 'y');
 
     const sum: Record<string, number> = {};
@@ -92,6 +151,6 @@ function testCloud() {
         add(sum2, p);
     }
 
-    console.log(sum);
-    console.log(sum2);
+    console.log(roundSum(sum));
+    console.log(roundSum(sum2));
 }

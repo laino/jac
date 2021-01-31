@@ -65,138 +65,117 @@ export class Dimension {
         this.tree.remove(index);
     }
 
-    public updateAll() {
-        this.tree.updateAll();
-    }
-
     public isBounds(index: number) {
         const tree = this.tree;
         return tree.firstKey() === index || tree.lastKey() === index;
     }
     
-    public range(x: number, y: number): PointWeight[] {
-        return [];
-        /*
+    public range(X: Point, Y: Point): PointWeight[] {
         const cloud = this.cloud;
         const tree = this.tree;
         const points = cloud.points;
-
-        if (x - y === 0 || cloud.numPoints < 1) {
-            return [];
-        }
+        const n = this.n;
 
         const weights: PointWeight[] = [];
 
-        const min = this.nodeLT(x);
-        const max = tree.iterateRight(min, (node) => {
-            const C = points[node.key];
-            const Cv = C[this.n];
+        // list of weight indexes at which values change,
+        // since the same value may be repeated
+        const steps: number[] = [];
+        let lastStep: Point;
 
-            // Last point
-            if (Cv > y) {
-                return false;
+        let start = tree.farKeyLeftOfValue(X);
+        let end = tree.farKeyRightOfValue(Y);
+
+        const XValue = X[n];
+        const YValue = Y[n];
+
+        // Selecting outside the range of keys
+        // We need an extra value to calculate curves
+        if (YValue < points[tree.firstKey()][n]) {
+            end = tree.keyWithNextValue(end);
+        } else if (XValue > points[tree.lastKey()][n]) {
+            start = tree.keyWithPreviousValue(start);
+        }
+
+        for (const key of tree.keysFromKey(start, true)) {
+            const P = points[key];
+
+            if (!lastStep || lastStep[n] !== P[n]) {
+                steps.push(weights.length);
+                lastStep = P;
             }
+             
+            weights.push(PointWeight(P, 1));
 
-            weights.push(PointWeight(C, 1));
-
-            return true;
-        });
-        */
-
-        /*
-        // We didn't enclose any point
-        if (weights.length === 0) {
-            const ratioA = this.interpolate(min, x);
-            const ratioB = this.interpolate(min, y);
-
-            if (min === -1) {
-                weights.push(PointWeight(sorted[0], ratioA - ratioB));
-            } else if (max === cloud.numPoints) {
-                weights.push(PointWeight(sorted[cloud.numPoints - 1], ratioB - ratioA));
+            if (key === end) {
+                break;
             }
+        }
 
-            if (ratioA < 0.5) {
-                if (ratioB < 0.5) {
-                    weights.push(PointWeight(sorted[min], ratioB - ratioA));
-                } else {
-                    weights.push(PointWeight(sorted[min], 0.5 - ratioA));
+        if (steps.length === 1) {
+            // All points have the same value.
+            for (let weight of weights) {
+                const Pv = weight.P[n];
+
+                if (Pv < XValue || Pv > YValue) {
+                    weight.w = 0;
                 }
             }
-            
-            if (ratioB > 0.5) {
-                if (ratioA > 0.5) {
-                    weights.push(PointWeight(sorted[min], ratioB - ratioA));
-                } else {
-                    weights.push(PointWeight(sorted[min], ratioB - 0.5));
-                }
-            }
 
+            console.log('same', weights);
             return weights;
         }
-        */
 
-        /*
-        // Interpolate between first point and the outside
-        let ratio = this.interpolate(min, x);
+        for (let i = 0; i < steps.length; i++) {
+            const stepIndex = steps[i];
+            const current = weights[stepIndex];
 
-        if (ratio >= 0.5) {
-            let i = 0;
-            const cmp = weights[i].P[this.n];
-            for (; i < weights.length && cmp === weights[i].P[this.n]; i++) {
-                weights[i].w += 0.5 - ratio;
+            let A: number;
+            let C: number;
+            const B = current.P[n];
+            
+            let end = 0;
+
+            if (i === 0) {
+                end = steps[i+1];
+                C = weights[end].P[n];
+                A = B + (B - C);
+            } else if (i + 1 === steps.length) {
+                end = weights.length;
+                A = weights[steps[i-1]].P[n];
+                C = B + (B - A);
+            } else {
+                end = steps[i+1];
+                A = weights[steps[i-1]].P[n];
+                C = weights[end].P[n];
             }
-        } else if (min > -1) {
-            let i = min;
-            const cmp = sorted[i][this.n];
-            for (; i >= 0 && cmp === sorted[i][this.n]; i--) {
-                weights.push(PointWeight(sorted[i], 0.5 - ratio));
+
+            const volume = this.interpolate2(XValue, YValue, A, B, C);
+
+            for (let i2 = stepIndex; i2 < end; i2++) {
+                weights[i2].w = volume;
             }
         }
-        
-        // Interpolate between last point and the outside
-        ratio = this.interpolate(max - 1, y);
 
-        if (ratio <= 0.5) {
-            let i = weights.length - 1;
-            const cmp = weights[i].P[this.n];
-            for (; i >= 0 && cmp === weights[i].P[this.n]; i--) {
-                weights[i].w -= 0.5 - ratio;
-            }
-        } else if (max < cloud.numPoints) {
-            let i = max;
-            const cmp = sorted[i][this.n];
-            for (; i < cloud.numPoints && cmp === sorted[i][this.n]; i++) {
-                weights.push(PointWeight(sorted[i], ratio - 0.5));
-            }
-        }
+        console.log(weights);
 
         return weights;
-        */
     }
 
-    /*
-    private interpolate(a: number, x: number): number {
-        const sorted = this.sorted;
-        const cloud = this.cloud;
-        
-        if (a === -1) {
-            return 1 + this.interpolate(a + 1, x);
+    // A, B, C are x-axis-values defining a curve that encloses a volume of 1 with the x-axis.
+    //
+    // Returns the volume to the left of x.
+    private interpolate(x: number, A: number, B: number, C: number): number {
+        if (x > B) {
+            return Math.min(1, ((x - B) / (C - B) / 2) + 0.5);
         }
 
-        if (a + 1 == cloud.numPoints) {
-            return this.interpolate(a - 1, x) - 1;
-        }
-
-        const A = sorted[a];
-        const B = sorted[a + 1];
-
-        const d = B[this.n] - A[this.n];
-
-        // Linear interpolation
-        // Using different functions yields different range selection behaviors
-        return (x - A[this.n]) / d;
+        return Math.max(0, (x - A) / (B - A) / 2);
     }
-    */
+    
+    private interpolate2(x: number, y: number, A: number, B: number, C: number): number {
+        return this.interpolate(y, A, B, C) - this.interpolate(x, A, B, C);
+    }
 }
 
 export class Cloud {
@@ -228,7 +207,7 @@ export class Cloud {
         const points = this.points;
 
         const dim = new Dimension(dimensions.length, this, 
-            dimensions.length === 1 ? fullCompare() : nCompare(dimensions.length));
+            dimensions.length === 0 ? fullCompare() : nCompare(dimensions.length));
 
         dimensions.push(dim);
 
@@ -240,9 +219,10 @@ export class Cloud {
                 n.set(p);
                 points[i] = p;
             }
-        }
 
-        dim.updateAll();
+            dim.update(i);
+            dimensions[0].update(i);
+        }
 
         return dimensions.length - 1;
     }
@@ -256,16 +236,12 @@ export class Cloud {
     }
 
     public add(p: Point) {
-        const dimensions = this.dimensions;
         const points = this.points;
 
         let index = this.getAt(p);
 
         if (index !== -1) {
             points[index][0] += p[0];     
-
-            dimensions[0].update(index);
-
             return;
         }
 
@@ -283,11 +259,7 @@ export class Cloud {
     public getAt(X: Point): number {
         const dimensions = this.dimensions;
 
-        if (dimensions.length === 1) {
-            return this.numPoints - 1;
-        }
-
-        const result = dimensions[1].tree.getKeys(X);
+        const result = dimensions[0].tree.getKeys(X);
 
         if (result.length === 0) {
             return -1;
@@ -301,6 +273,9 @@ export class Cloud {
 
         const dimensions = this.dimensions;
 
+        const tmpA = new Float64Array(dimensions.length);
+        const tmpB = new Float64Array(dimensions.length);
+
         for (let i = 0; i < dimensions.length; i++) {
             const rn = ranges[i];
 
@@ -313,7 +288,9 @@ export class Cloud {
             const range = new Map<Point, number>();
 
             for (let i2 = 0; i2 < rn.length; i2 += 2) {
-                const s = dim.range(rn[i2], rn[i2 + 1]);
+                tmpA[i] = rn[i2];
+                tmpB[i] = rn[i2 + 1];
+                const s = dim.range(tmpA, tmpB);
 
                 if (i2 === 0) {
                     for (const {P, w} of s) {
@@ -374,24 +351,21 @@ export class Cloud {
     }
  
     private simplify(): number {
-        const dimensions = this.dimensions;
-        const tree = dimensions[0].tree;
-
         // The higher the angle a point spans towards its neighbours,
         // the closer it is to their interpolated values
         let highestAngle = 0;
         let highestAngleIndex = -1;
 
-        for (const key of tree) {
-            if (this.isBounds(key)) {
+        for (let i = this.numPoints - 1; i >= 0; i--) {
+            if (this.isBounds(i)) {
                 continue;
             }
 
-            const angle = this.angle(key);
+            const angle = this.angle(i);
 
             if (angle >= highestAngle) {
                 highestAngle = angle;
-                highestAngleIndex = key;
+                highestAngleIndex = i;
             }
         }
 
@@ -418,8 +392,8 @@ export class Cloud {
             // We're not supposed to be called with bounding points,
             // so we don't check whether these exist here
 
-            const right = tree.keysFromKey(index).next().value;
-            const left = tree.keysReversedFromKey(index).next().value;
+            const right = tree.keyRightOfKey(index);
+            const left = tree.keyLeftOfKey(index);
 
             const R = points[right];
             const L = points[left];
@@ -481,7 +455,6 @@ export class Cloud {
 
     private modify(target: number, data: Point) {
         const points = this.points;
-        const dimensions = this.dimensions;
 
         const P = points[target];
 
@@ -496,7 +469,6 @@ export class Cloud {
         }
 
         points[existing][0] += data[0];
-        dimensions[0].update(existing);
 
         if (existing !== target) {
             this.remove(target);
