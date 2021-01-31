@@ -6,6 +6,8 @@ export interface SortTreeNode<K> {
     right: SortTreeNode<K>;
 }
 
+export type CompareFunction<K> = (a: K, b: K) => number;
+
 let TreeBottom: SortTreeNode<any>;
 
 function createNode<K>(keys: K[]): SortTreeNode<K> {
@@ -18,11 +20,9 @@ function createNode<K>(keys: K[]): SortTreeNode<K> {
 }
 
 TreeBottom = createNode([]);
+TreeBottom.parent = TreeBottom;
 TreeBottom.left = TreeBottom;
 TreeBottom.right = TreeBottom;
-TreeBottom.parent = TreeBottom;
-
-export type CompareFunction<K> = (a: K, b: K) => number;
 
 function removeKeyFromNode<K>(node: SortTreeNode<K>, k: K) {
     const keys = node.keys;
@@ -67,7 +67,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     public getKeys(value: V): K[] {
         return this.findNode(value, this.compare).keys;
     }
- 
+
     public update(k: K) {
         let node = this.keyMap.get(k);
 
@@ -83,7 +83,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         node = this.insertNode(this.root, k, node);    
         this.keyMap.set(k, node);
     }
-    
+
     public remove(k: K) {
         const node = this.keyMap.get(k);
 
@@ -141,7 +141,7 @@ export abstract class SortTree<K, V> implements Iterable<K> {
     
     public keyLeftOfKey(key: K) {
         let node = this.keyMap.get(key);
-
+        
         if (!node) {
             return;
         }
@@ -164,12 +164,12 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         }
 
         let kIndex = nodeKeyIndex(node, key) + 1;
-
+        
         if (kIndex === node.keys.length) {
             node = rightOfNode(node);
             kIndex = 0;
         }
-
+        
         return node.keys[kIndex];
     }
     
@@ -479,23 +479,16 @@ export abstract class SortTree<K, V> implements Iterable<K> {
 
             const keys = replace.keys;
             replace.keys = node.keys;
-            node.keys = keys;
 
             for (let i = keys.length - 1; i >= 0; i--) {
                 this.keyMap.set(keys[i], node);
             }
+            
+            node.keys = keys;
 
             node = replace;
-            left = TreeBottom;
+            left = replace.left;
             right = replace.right;
-        }
-
-        if (left !== TreeBottom) {
-            this.replaceInParent(node, left);
-        } else if (right !== TreeBottom) {
-            this.replaceInParent(node, right);
-        } else {
-            this.replaceInParent(node, TreeBottom);
         }
         
         if (this.first === node) {
@@ -506,6 +499,14 @@ export abstract class SortTree<K, V> implements Iterable<K> {
             this.last = leftOfNode(node);
         }
 
+        if (left !== TreeBottom) {
+            this.replaceInParent(node, left);
+        } else if (right !== TreeBottom) {
+            this.replaceInParent(node, right);
+        } else {
+            this.replaceInParent(node, TreeBottom);
+        }
+        
         node.left = TreeBottom;
         node.right = TreeBottom;
         node.parent = TreeBottom;
@@ -513,6 +514,10 @@ export abstract class SortTree<K, V> implements Iterable<K> {
         this.nodeCount--;
 
         return node;
+    }
+
+    public validate() {
+        return validate(this);
     }
 }
 
@@ -661,11 +666,11 @@ function treeFromArray<K>(arr: SortTreeNode<K>[], start: number, end: number) {
     const left = treeFromArray(arr, start, mid - 1);
     const right = treeFromArray(arr, mid + 1, end);
 
-    if (left) {
+    if (left != TreeBottom) {
         left.parent = node;
     }
     
-    if (right) {
+    if (right != TreeBottom) {
         right.parent = node;
     }
 
@@ -673,4 +678,106 @@ function treeFromArray<K>(arr: SortTreeNode<K>[], start: number, end: number) {
     node.right = right;
 
     return node;
+}
+
+function validate<K, V>(tree: SortTree<K, V>) {
+    const nodes = new Set<SortTreeNode<K>>();
+    
+    let hadError = false;
+
+    for (const [key, node] of tree.keyMap) {
+        if (nodeKeyIndex(node, key) === -1) {
+            hadError = true;
+        }
+        
+        nodes.add(node);
+
+        if (!validateNode(tree, node)) {
+            hadError = true;
+        }
+    }
+
+    let node = tree.first;
+
+    do {
+        if (!validateNode(tree, node)) {
+            hadError = true;
+        }
+        nodes.add(node);
+    } while ((node = rightOfNode(node)) !== TreeBottom);
+
+    if (nodes.size !== tree.nodeCount) {
+        console.error("Node count incorrect!");
+        hadError = true;
+    }
+    
+    if (TreeBottom.parent !== TreeBottom) {
+        console.error("TreeBottom has a parent now!");
+        hadError = true;
+    }
+    
+    if (TreeBottom.left !== TreeBottom) {
+        console.error("TreeBottom has a left node now!");
+        hadError = true;
+    }
+    
+    if (TreeBottom.right !== TreeBottom) {
+        console.error("TreeBottom has a right node now!");
+        hadError = true;
+    }
+    
+    if (TreeBottom.keys.length !== 0) {
+        console.error("TreeBottom has keys now!");
+        hadError = true;
+    }
+
+    const selfSort = [... tree].map(k => tree.get(k));
+
+    if (selfSort.length !== tree.keyMap.size) {
+        console.error(`Number of keys don't match! ${selfSort.length} vs ${tree.keyMap.size}`);
+        hadError = true;
+    }
+
+    for (let i = 0; i < selfSort.length - 1; i++) {
+        if (tree.compare(selfSort[i], selfSort[i + 1]) < 0) {
+            console.error("Array not correctly sorted!");
+            hadError = true;
+        }
+    }
+
+    return !hadError;
+}
+
+function validateNode<K, V>(tree: SortTree<K,V>, node: SortTreeNode<K>) {
+    let hadError = false;
+
+    if (node.parent !== TreeBottom) {
+        if (node.parent.left !== node && node.parent.right !== node) {
+            console.error("Node parent doesn't contain node!");
+            hadError = true;
+        }
+    }
+
+    for (let key of node.keys) {
+        if (tree.keyMap.get(key) !== node) {
+            console.error("Node has a key that points to a different node!");
+            hadError = true;
+        }
+    }
+
+    if (node.left !== TreeBottom) {
+        if (node.left.parent !== node) {
+            console.error("Node's left child has another parent!");
+            hadError = true;
+        }
+    }
+    
+    if (node.right !== TreeBottom) {
+        if (node.right.parent !== node) {
+            console.error("Node's right child has another parent!");
+            hadError = true;
+        }
+    }
+
+    return !hadError;
 }

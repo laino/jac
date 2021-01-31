@@ -5,11 +5,14 @@ import { round } from 'math';
 
 // just a playground for active development right now
 
-//testJACStress();
+//console.log(round(1000000.1 + 0.2 - 1000000.3));
+testJACStress();
 //testArrayTree();
 //testSetTree();
 
-testCloud();
+//testCloud();
+
+//testTreeStress();
 
 function printNode(node: SortTreeNode<number>, depth = 0) {
     const indent = Array(depth).fill(' ').join('');
@@ -51,6 +54,37 @@ function roundSum(sum: Record<string, number>) {
     return sum;
 }
 
+function testTreeStress() {
+    const arr = [];
+    const tree = new ArraySortTree(arr, (a: number, b: number) => {
+        return b - a;
+    });
+
+    for (let i = 0; i < 12; i++) {
+        arr.push(i);
+        tree.update(i);
+    }
+
+    while (true) {
+        const index = Math.floor(Math.random() * arr.length);
+        const val = Math.floor(Math.random() * arr.length);
+
+        arr[index] = val;
+
+        if (Math.random() > 0.95) {
+            console.log('remove', index, val);
+            tree.remove(index);
+        } else {
+            console.log('update', index, val);
+            tree.update(index);
+        }
+
+        if (!tree.validate()) {
+            break;
+        }
+    }
+}
+
 function testSetTree() {
     const tree = new SetSortTree((a: number, b: number) => {
         return b - a;
@@ -73,10 +107,12 @@ function testSetTree() {
 }
 
 function testArrayTree() {
-    const arr = [0, 0, 0, 1, 1, 1, 2, 2, 2];
+    const arr = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const tree = new ArraySortTree(arr, (a: number, b: number) => {
         return b - a;
     });
+    arr[5] = 11;
+
 
     tree.update(3);
     tree.update(4);
@@ -86,39 +122,36 @@ function testArrayTree() {
     tree.update(2);
     tree.update(6);
     tree.update(7);
+    tree.update(6);
     tree.update(8);
+    
+
+    tree.update(5);
+
+    //tree.remove(7);
+    //tree.remove(8);
+    //tree.remove(7);
+    //tree.remove(8);
 
     console.log('min', tree.firstKey(), 'max', tree.lastKey());
 
+    console.log(... [... tree].map(k => `${k}:${arr[k]}`));
     printNode(tree.root);
-
-    for (const k of tree.keysReversedFromValue(0.1, false)){
-        console.log(k);
-    }
+    
+    tree.validate();
 }
 
 function testCloud() {
-    const cloud = new jac.JAC({maxPoints: 300}, 'volume', 'x', 'y');
+    const cloud = new jac.JAC({maxPoints: 4}, 'volume', 'x');
 
-    cloud.add({
-        volume: 1,
-        x: 1,
-        y: 1
-    });
+    for (let i = 0; i < 10; i++) {
+        cloud.add({
+            volume: 1,
+            x: i,
+        });
+    }
 
-    cloud.add({
-        volume: 1,
-        x: 2,
-        y: 2,
-    });
-    
-    cloud.add({
-        volume: 1,
-        x: 3,
-        y: 3
-    });
-
-    console.log(cloud.cloud.ranges([,[-10, 1.8]]));
+    console.log(cloud.getData());
 }
 
 function testJACStress() {

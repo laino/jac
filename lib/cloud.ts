@@ -1,6 +1,6 @@
 
 import { ArraySortTree } from 'sort-tree';
-import { Point, NumberArrayLike, angle } from 'math';
+import { Point, NumberArrayLike, angle, round } from 'math';
 
 export interface PointWeight {
     P: Point,
@@ -236,12 +236,17 @@ export class Cloud {
     }
 
     public add(p: Point) {
+        for (let i = p.length; i >= 0; i--) {
+            p[i] = round(p[i]);
+        }
+
         const points = this.points;
 
         let index = this.getAt(p);
 
         if (index !== -1) {
-            points[index][0] += p[0];     
+            const E = points[index];
+            E[0] = round(E[0] + p[0]);
             return;
         }
 
@@ -254,6 +259,51 @@ export class Cloud {
         this.points[index] = p;
         
         this.updateInDimensions(index);
+    }
+    
+    private modify(target: number, data: Point) {
+        const points = this.points;
+
+        const P = points[target];
+
+        for (let i = data.length; i >= 0; i--) {
+            P[i] = round(data[i]);
+        }
+
+        const existing = this.getAt(data);
+
+        if (existing === -1) {
+            this.updateInDimensions(target);
+            return -1;
+        }
+
+        if (existing !== target) {
+            points[existing][0] = round(points[existing][0] + data[0]);
+            return this.remove(target);
+        }
+
+        return -1;
+    }
+
+    private remove(target: number) {
+        const points = this.points;
+
+        const last = this.numPoints - 1;
+        this.numPoints = last;
+        
+        this.removeFromDimensions(last);
+
+        if (target === last) {
+            return -1;
+        }
+
+        const old = points[target];
+        points[target] = points[last];
+        points[last] = old;
+
+        this.updateInDimensions(target);
+
+        return last;
     }
     
     public getAt(X: Point): number {
@@ -276,7 +326,7 @@ export class Cloud {
         const tmpA = new Float64Array(dimensions.length);
         const tmpB = new Float64Array(dimensions.length);
 
-        for (let i = 0; i < dimensions.length; i++) {
+        for (let i = 0; i < ranges.length; i++) {
             const rn = ranges[i];
 
             if (!rn) {
@@ -423,7 +473,7 @@ export class Cloud {
         const tmp = new Float64Array(dlen);
 
         const P = points[index];
-        const weights = this.weights(P, P);
+        const weights = this.weights(P);
 
         for (let i = 0; i < l; i++) {
             const P2 = points[i];
@@ -434,6 +484,10 @@ export class Cloud {
             }
 
             const combinedV = P2[0] + V;
+
+            if (combinedV === 0) {
+                continue;
+            }
             
             for (let i2 = dlen - 1; i2 >= 0; i2--) {
                 tmp[i2] = ((P2[i2] * P2[0]) + (P[i2] * V)) / combinedV;
@@ -452,50 +506,7 @@ export class Cloud {
         
         this.displacement += P[0]; 
     }
-
-    private modify(target: number, data: Point) {
-        const points = this.points;
-
-        const P = points[target];
-
-        const existing = this.getAt(data);
-
-        if (existing === -1) {
-            P.set(data);
-
-            this.updateInDimensions(target);
-
-            return -1;
-        }
-
-        points[existing][0] += data[0];
-
-        if (existing !== target) {
-            this.remove(target);
-        }
-    }
-
-
-    private remove(target: number) {
-        const points = this.points;
-
-        const last = this.numPoints - 1;
-        this.numPoints = last;
-
-        if (target === last) {
-            this.removeFromDimensions(last);
-
-            return last;
-        }
-
-        points[target] = points[last];
-
-        this.removeFromDimensions(last);
-        this.updateInDimensions(target);
-
-        return last;
-    }
-    
+ 
     private removeFromDimensions(index: number) {
         const dimensions = this.dimensions;
 
@@ -523,11 +534,10 @@ export class Cloud {
         }
     }
 
-    private weights(d: NumberArrayLike, exclude?: Point) {
+    private weights(d: NumberArrayLike) {
         const points = this.points;
         const weights = new Float64Array(this.numPoints);
 
-        let zeros = 0;
         let sum = 0;
 
         const l = this.numPoints;
@@ -535,36 +545,22 @@ export class Cloud {
         for (let i = 0; i < l; i++) {
             const P = points[i];
 
-            if (P === exclude) {
+            if (this.isBounds(i)) {
                 continue;
             }
 
             const dist = this.distance(P, d);
 
-            if (dist === 0) {
-                zeros++;
-            } else {
+            if (dist !== 0) {
                 const w = 1 / dist;
                 weights[i] = w;
                 sum += w;
             }
         }
 
-        if (zeros) {
-            const zerosInv = 1 / zeros;
-
-            for (let i = 0; i < l; i++) {
-                if (weights[i] !== 0) {
-                    weights[i] = 0;
-                } else if (points[i] !== exclude) {
-                    weights[i] = zerosInv;
-                }
-            }
-        } else {
-            const sumInv = 1 / sum;
-            for (let i = 0; i < l; i++) {
-                weights[i] *= sumInv;
-            }
+        const sumInv = 1 / sum;
+        for (let i = 0; i < l; i++) {
+            weights[i] *= sumInv;
         }
 
         return weights;
