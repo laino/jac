@@ -186,11 +186,11 @@ export class Dimension {
      */
     private interpolate(x: number, A: number, B: number, C: number): number {
         if (x > B) {
-            const p = (x - B) / (C - B);
+            const p = Math.pow((x - B) / (C - B), 1/2);
             return Math.min(1, (1 + p) / 2);
         }
 
-        const p = (B - x) / (B - A);
+        const p = Math.pow((B - x) / (B - A), 1/2);
         return Math.max(0, (1 - p) / 2);
     }
     
@@ -574,9 +574,9 @@ export class Cloud {
 
         // Area is defined by 4 points with x,v pairs:
         // L = (x left of P, volume left of P)
-        // S = P(Px, (volume at P))
+        // S = P(Px, (volume/average at P))
         // R = (x right of P, volume right of P)
-        // N = (Px, (volume at P) - (volume of P))
+        // N = (Px, (volume/average at P) - (volume/value of P))
         //
         // Area = (R, S, L, N)
         const Area = new Float64Array(8);
@@ -627,8 +627,6 @@ export class Cloud {
 
                 const area = Math.abs(area4(Area)) / d1range / d2range;
 
-                // TODO: square this?
-                // What about dimension 0 where we don't average?
                 totalArea += area;
             }
 

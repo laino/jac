@@ -106,8 +106,12 @@ function run() {
     
     printError("Average Change", change.map(c => c / totalNumber));
     printError("Average Error (+/-)", sum.map(c => c / totalNumber));
-    printError("Min Error", min);
-    printError("Max Error", max);
+
+    // min/max aren't very useful right now, because
+    // there will always be areas that go from 0 to +/- X, resulting
+    // in either -200% or +200%
+    //printError("Min Error", min);
+    //printError("Max Error", max);
     
     console.log();
 }
