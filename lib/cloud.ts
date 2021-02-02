@@ -1,6 +1,12 @@
 
 import { ArraySortTree } from 'sort-tree';
-import { Point, NumberArrayLike, round, area3, area4 } from 'math';
+import { Point, NumberArrayLike, round, area4 } from 'math';
+
+/* When range selecting at the sides, assume the outer
+ * points stretch this far beyond the side,
+ * relative to the next inner point.
+ */
+const OVERHANG = 0.5;
 
 export interface PointWeight {
     P: Point,
@@ -63,6 +69,17 @@ export class Dimension {
     
     public remove(index: number) {
         this.tree.remove(index);
+    }
+
+    public maxDistance() {
+        const points = this.cloud.points;
+        const tree = this.tree;
+        const n = this.n;
+
+        const min = points[tree.firstKey()][n];
+        const max = points[tree.lastKey()][n];
+
+        return max - min;
     }
 
     public isBounds(index: number) {
@@ -138,11 +155,11 @@ export class Dimension {
             if (i === 0) {
                 end = steps[i+1];
                 C = points[weights[end][0]][n];
-                A = B + (B - C);
+                A = B + ((B - C) * OVERHANG);
             } else if (i + 1 === steps.length) {
                 end = weights.length;
                 A = points[weights[steps[i-1]][0]][n];
-                C = B + (B - A);
+                C = B + ((B - A) * OVERHANG);
             } else {
                 end = steps[i+1];
                 A = points[weights[steps[i-1]][0]][n];
@@ -169,11 +186,11 @@ export class Dimension {
      */
     private interpolate(x: number, A: number, B: number, C: number): number {
         if (x > B) {
-            const p = Math.pow((x - B) / (C - B), 1/2);
+            const p = (x - B) / (C - B);
             return Math.min(1, (1 + p) / 2);
         }
 
-        const p = Math.pow((B - x) / (B - A), 1/2);
+        const p = (B - x) / (B - A);
         return Math.max(0, (1 - p) / 2);
     }
     
@@ -186,12 +203,14 @@ export class Dimension {
 export class Cloud {
     public points: Point[] = [];
     public numPoints = 0;
+    public totalVolume = 0;
+    
+    private lookupTree = new ArraySortTree(this.points, fullCompare());
 
     public dimensions: Dimension[] = [];
 
     public displacement: number;
     public readonly settings: CloudSettings;
-
 
     public constructor(settings: CloudSettings) {
         this.settings = settings;
@@ -204,32 +223,31 @@ export class Cloud {
     public addDimension() {
         const dimensions = this.dimensions;
 
-        if (this.settings.maxPoints < (dimensions.length + 1) * 2) {
+        if (this.settings.maxPoints < (dimensions.length) * 2) {
             throw new Error("At least [dimensions * 2] points are required.");
         }
 
         const l = this.numPoints;
         const points = this.points;
+        const n = dimensions.length;
 
-        const dim = new Dimension(dimensions.length, this, 
-            dimensions.length === 0 ? fullCompare() : nCompare(dimensions.length));
+        const dim = new Dimension(n, this, nCompare(n));
 
         dimensions.push(dim);
 
         for (let i = 0; i < l; i++) {
-            const p = points[i];
+            const P = points[i];
 
-            if (p.length < dimensions.length) {
-                const n = new Float64Array(dimensions.length);
-                n.set(p);
-                points[i] = p;
+            if (P.length < dimensions.length) {
+                const P2 = new Float64Array(dimensions.length);
+                P2.set(P);
+                points[i] = P2;
             }
 
             dim.update(i);
-            dimensions[0].update(i);
         }
 
-        return dimensions.length - 1;
+        return n;
     }
 
     public getPoints(): Point[] {
@@ -241,9 +259,11 @@ export class Cloud {
     }
 
     public add(p: Point) {
-        for (let i = p.length; i > 0; i--) {
+        for (let i = p.length; i >= 0; i--) {
             p[i] = round(p[i]);
         }
+
+        this.totalVolume += p[0];
 
         const points = this.points;
 
@@ -251,17 +271,16 @@ export class Cloud {
 
         if (index !== -1) {
             const E = points[index];
-            E[0] = round(E[0] + p[0]);
+            E[0] = E[0] + p[0];
+            this.dimensions[0].update(index);
             return;
         }
 
         if (this.numPoints === this.points.length) {
-            index = this.simplify();
-        }  else {
-            index = this.numPoints++;
+            this.simplify();
         }
 
-        p[0] = round(p[0]);
+        index = this.numPoints++;
 
         this.points[index] = p;
         
@@ -271,35 +290,30 @@ export class Cloud {
     private modify(target: number, data: Point) {
         const points = this.points;
 
-        for (let i = data.length - 1; i > 0; i--) {
-            if (isNaN(data[i])) {
-                throw new Error('nop');
-            }
+        for (let i = data.length - 1; i >= 0; i--) {
             data[i] = round(data[i]);
         }
 
         const existing = this.getAt(data);
 
-        if (existing === -1) {
+        if (existing === -1 || existing === target) {
             const P = points[target];
-            data[0] = round(data[0]);
             P.set(data);
             this.updateInDimensions(target);
             return -1;
         }
 
-        if (existing !== target) {
-            points[existing][0] = round(points[existing][0] + data[0]);
-            return this.remove(target);
-        }
+        points[existing][0] += data[0];
+        this.dimensions[0].update(existing);
 
-        return -1;
+        return this.remove(target);
     }
 
     private remove(target: number) {
         const points = this.points;
 
         const last = this.numPoints - 1;
+        this.numPoints = last;
         
         this.removeFromDimensions(last);
 
@@ -312,16 +326,12 @@ export class Cloud {
         points[last] = old;
 
         this.updateInDimensions(target);
-        
-        this.numPoints = last;
 
         return last;
     }
     
     public getAt(X: Point): number {
-        const dimensions = this.dimensions;
-
-        const result = dimensions[0].tree.getKeys(X);
+        const result = this.lookupTree.getKeys(X);
 
         if (result.length === 0) {
             return -1;
@@ -404,26 +414,7 @@ export class Cloud {
         return result;
     }
 
-    public point(d: Float64Array): Selection {
-        const points = this.points;
-
-        const weights = this.pointWeights(d);
-
-        const selection = new Map<Point, number>();
-
-        const l = this.numPoints;
-
-        for (let i = 0; i < l; i++) {
-            const P = points[i];
-            const w = weights[i];
-
-            selection.set(P, w);
-        }
-        
-        return selection;
-    }
- 
-    private simplify(): number {
+    private simplify() {
         // The smaller the area a point encloses with its neighbours,
         // the closer it is to their interpolated values
         let smallestArea = Infinity;
@@ -445,155 +436,35 @@ export class Cloud {
         if (smallestAreaIndex !== -1) {
             this.distribute(smallestAreaIndex);
         }
-
-        return smallestAreaIndex;
     }
     
-    private area(index: number) {
-        const dimensions = this.dimensions;
-        const points = this.points;
-        const P = points[index];
-
-        // Area is defined by 4 points with x,v pairs:
-        // L = (x left of P, volume left of P)
-        // S = P(Px, (volume at P))
-        // R = (x right of P, volume right of P)
-        // N = (Px, (volume at P) - (volume of P))
-        //
-        // Area = (R, S, L, N)
-        const Area = new Float64Array(8);
-        
-        let totalArea = 0;
-
-        for (let i = dimensions.length - 1; i > 0; i--) {
-            const tree = dimensions[i].tree;
-
-            // We're not supposed to be called with bounding points,
-            // so we don't check whether these exist here
-
-            const middle = tree.keysWithSameValue(index);
-            const right = tree.keysWithNextValue(index);
-            const left = tree.keysWithPreviousValue(index);
-
-            Area[0] = points[left[0]][i]; // Lx
-            Area[2] = P[i]; // Sx = Px
-            Area[4] = points[right[0]][i]; // Rx
-
-            Area[1] = 0; // Lv
-            for (const k of left) {
-                Area[1] += points[k][0]; // Lv
-            }
-            
-            Area[5] = 0; // Rv
-            for (const k of right) {
-                Area[5] += points[k][0]; // Rv
-            }
-
-            if (middle.length === 1) {
-                Area[3] = P[0];
-                totalArea += Math.abs(area3(Area));
-            } else {
-                Area[3] = 0; // Sv
-                for (const k of middle) {
-                    Area[3] += points[k][0]; // Sv
-                }
-                Area[6] = P[i]; // Sx
-                Area[7] = Area[3] - P[0];
-                totalArea += Math.abs(area4(Area));
-            }
-        }
-
-        return totalArea;
-    }
-
-    /*
-    private angle(index: number) {
-        const dimensions = this.dimensions;
-        const points = this.points;
-
-        const P = points[index];
-
-        let totalAngle = 0;
-
-        const tmpA = [0, 0];
-        const tmpB = [0, 0];
-
-        for (let i = dimensions.length - 1; i > 0; i--) {
-            const tree = dimensions[i].tree;
-
-            // We're not supposed to be called with bounding points,
-            // so we don't check whether these exist here
-
-            const middle = tree.keysWithSameValue(index);
-            const right = tree.keysWithNextValue(index);
-            const left = tree.keysWithPreviousValue(index);
-
-            tmpA[0] = 0;
-            tmpA[1] = points[left[0]][i] - P[i];
-
-            tmpB[1] = 0;
-            tmpB[1] = points[right[0]][i] - P[i];
-            
-            for (const k of left) {
-                tmpA[0] += points[k][0];
-            }
-            
-            for (const k of right) {
-                tmpB[0] += points[k][0];
-            }
-
-            let totalMiddleVolume = 0;
-            
-            for (const k of middle) {
-                totalMiddleVolume = points[k][0];
-            }
-
-            tmpA[0] -= totalMiddleVolume;
-            tmpB[0] -= totalMiddleVolume;
-
-            const angleWith = angle(tmpA, tmpB);
-
-            tmpA[0] += P[0];
-            tmpB[0] += P[0];
-
-            const angleWithout = angle(tmpB, tmpB);
-
-            totalAngle += Math.abs(angleWith - angleWithout);
-        }
-
-        // averaging would be pointless, since it's only used for comparison
-        return totalAngle;
-    }
-    */
-
     // Distributes the point at index to others while preserving totals
     // TODO Currently about 50% of CPU time for insertions is spent here
     private distribute(index: number) {
         const dimensions = this.dimensions;
         const dlen = dimensions.length;
         const points = this.points;
-        let l = this.numPoints;
 
         const tmp = new Float64Array(dlen);
 
-        const P = points[index];
+        const P = points[index].slice(0);
+
+        this.remove(index);
+
         const weights = this.distributeWeights(P);
 
+        let l = this.numPoints;
         for (let i = 0; i < l; i++) {
             const P2 = points[i];
             const V = P[0] * weights[i];
 
-            if (V === 0) {
-                continue;
-            }
-
             const combinedV = P2[0] + V;
 
-            if (combinedV === 0) {
+            if (combinedV < Number.EPSILON) {
                 continue;
             }
             
-            for (let i2 = dlen - 1; i2 >= 0; i2--) {
+            for (let i2 = dlen - 1; i2 > 0; i2--) {
                 tmp[i2] = ((P2[i2] * P2[0]) + (P[i2] * V)) / combinedV;
             }
             
@@ -617,6 +488,8 @@ export class Cloud {
         for (let i = dimensions.length - 1; i >= 0; i--) {
             dimensions[i].remove(index);
         }
+        
+        this.lookupTree.remove(index);
     }
     
     private updateInDimensions(index: number) {
@@ -625,33 +498,36 @@ export class Cloud {
         for (let i = dimensions.length - 1; i >= 0; i--) {
             dimensions[i].update(index);
         }
+
+        this.lookupTree.update(index);
     }
 
-    private distributeWeights(d: NumberArrayLike) {
+    private distributeWeights(P: Float64Array) {
         const points = this.points;
         const weights = new Float64Array(this.numPoints);
 
-        let sum = 0;
+        let weightSum = 0;
 
         const l = this.numPoints;
 
         for (let i = 0; i < l; i++) {
             const T = points[i];
 
-            const dist = this.distance(T, d);
+            const dist = this.distance(T, P);
 
-            if (dist !== 0) {
-                const w = 1 / Math.pow(dist, 2);
-                weights[i] = w;
-                sum += w;
-            }
+            const w = T[0] / dist;
+
+            weights[i] = w;
+            weightSum += w;
         }
 
-        if (sum > 0) {
-            const sumInv = 1 / sum;
+        if (weightSum > Number.EPSILON) {
+            const weightSumInv = 1 / weightSum;
             for (let i = 0; i < l; i++) {
-                weights[i] *= sumInv;
+                weights[i] = weights[i] * weightSumInv;
             }
+        } else {
+            return null;
         }
 
         return weights;
@@ -668,55 +544,13 @@ export class Cloud {
         }
     }
     
-
-    private pointWeights(d: NumberArrayLike) {
-        const points = this.points;
-        const weights = new Float64Array(this.numPoints);
-
-        let sum = 0;
-
-        const l = this.numPoints;
-
-        for (let i = 0; i < l; i++) {
-            const P = points[i];
-
-            if (this.isBounds(i)) {
-                continue;
-            }
-
-            const dist = this.distance(P, d);
-
-            if (dist !== 0) {
-                const w = 1 / dist;
-                weights[i] = w;
-                sum += w;
-            }
-        }
-
-        const sumInv = 1 / sum;
-        for (let i = 0; i < l; i++) {
-            weights[i] *= sumInv;
-        }
-
-        return weights;
-    }
-
     private distance(a: NumberArrayLike, b: NumberArrayLike) {
-        // Simplified because we only use this
-        // for relative comparisons anyways
-
         let dist = 0;
 
         const dimensions = this.dimensions;
-        const points = this.points;
 
         for (let i = dimensions.length - 1; i > 0; i--) {
-            const tree = dimensions[i].tree;
-
-            const min = points[tree.firstKey()][i];
-            const max = points[tree.lastKey()][i];
-
-            let rD = max - min;
+            let rD = dimensions[i].maxDistance();
 
             if (rD === 0) {
                 continue;
@@ -729,6 +563,98 @@ export class Cloud {
 
         return dist;
     }
+    
+    // Returns an estimate on the 'area' that would be displaced when removing point X
+    // on charts plotting all of the various dimensions against each other
+    private area(index: number) {
+        const dimensions = this.dimensions;
+        const points = this.points;
+        const P = points[index];
+        const totalVolume = this.totalVolume;
+
+        // Area is defined by 4 points with x,v pairs:
+        // L = (x left of P, volume left of P)
+        // S = P(Px, (volume at P))
+        // R = (x right of P, volume right of P)
+        // N = (Px, (volume at P) - (volume of P))
+        //
+        // Area = (R, S, L, N)
+        const Area = new Float64Array(8);
+        
+        let totalArea = 0;
+
+        for (let i = dimensions.length - 1; i > 0; i--) {
+            const d1 = dimensions[i];
+            const d1range = d1.maxDistance();
+            const tree = d1.tree;
+
+            // We're not supposed to be called with bounding points,
+            // so we don't check whether these exist here
+
+            const middle = tree.keysWithSameValue(index);
+            const right = tree.keysWithNextValue(index);
+            const left = tree.keysWithPreviousValue(index);
+
+            if (left.length === 0 || right.length === 0) {
+                continue;
+            }
+
+            Area[0] = points[right[0]][i]; // Rx
+            Area[2] = P[i]; // Px = Sx
+            Area[4] = points[left[0]][i]; // Lx
+            Area[6] = P[i]; // Sx
+
+            const Rv = sumValues(right, 0);
+            const Sv = sumValues(middle, 0);
+            const Lv = sumValues(left, 0);
+            const Nv = Sv - P[0];
+ 
+            for (let i2 = i - 1; i2 >= 0; i2--) {
+                const d2range = (i2 === 0) ? totalVolume : dimensions[i2].maxDistance();
+
+                if (i2 === 0) {
+                    Area[1] = Rv;
+                    Area[3] = Sv;
+                    Area[5] = Lv;
+                    Area[7] = Nv;
+                } else {
+                    const sumM = sumMultipliedValues(middle, i2, 0);
+                    Area[1] = (Rv < Number.EPSILON) ? 0 : sumMultipliedValues(right, i2, 0) / Rv; // Rv
+                    Area[3] = (Sv < Number.EPSILON) ? 0 : sumM / Sv; // Sv
+                    Area[5] = (Lv < Number.EPSILON) ? 0 : sumMultipliedValues(left, i2, 0) / Lv; // Lv
+                    Area[7] = (Nv < Number.EPSILON) ? 0 : (sumM - P[i2] * P[0]) / Nv; // Nv
+                }
+
+                const area = Math.abs(area4(Area)) / d1range / d2range;
+
+                // TODO: square this?
+                // What about dimension 0 where we don't average?
+                totalArea += area;
+            }
+
+            return totalArea;
+        }
+        
+        function sumMultipliedValues(list: number[], n: number, m: number) {
+            let sum = 0;
+            for (let i of list) {
+                const P = points[i];
+                sum += P[n] * P[m];
+            }
+            return sum;
+        }
+
+        function sumValues(list: number[], n: number) {
+            let sum = 0;
+            for (let i of list) {
+                sum += points[i][n];
+            }
+            return sum;
+        }
+
+        return totalArea;
+    }
+
 }
 
 export function scaleSelection(selection: Selection, scale: number) {
@@ -776,22 +702,20 @@ export function sumSelection(selection: Selection, dimensions: number) {
 }
 
 export function calculateError(expected: Selection, measured: Selection, dimensions: number) {
-    const sumA = sumSelection(expected, dimensions);
-    const sumB = sumSelection(measured, dimensions);
+    const sumE = sumSelection(expected, dimensions);
+    const sumM = sumSelection(measured, dimensions);
 
     const error = new Float64Array(dimensions);
 
     for (let i = 0; i < dimensions; i++) {
-        const r = sumA[i];
-        const m = sumB[i];
-        const d = m - r;
+        const e = sumE[i];
+        const m = sumM[i];
 
-        // Technically we should use r instead of the maximum, but
-        // this gives more 'useful' values that can be compared.
-        const max = Math.max(Math.abs(r), Math.abs(m));
+        const d = m - e;
+        const r = Math.abs(m) + Math.abs(e);
 
-        if (max > Number.EPSILON) {
-            error[i] = d / max;
+        if (r > Number.EPSILON) {
+            error[i] = 2 * d / r;
         }
     }
 

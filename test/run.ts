@@ -1,6 +1,7 @@
 
-import * as jac from 'jac';
+import { JAC } from 'jac';
 import { SetSortTree, ArraySortTree, SortTreeNode } from 'sort-tree';
+import * as cloud from 'cloud';
 
 // just a playground for active development right now
 
@@ -11,6 +12,8 @@ import { SetSortTree, ArraySortTree, SortTreeNode } from 'sort-tree';
 //testTreeStress();
 
 testJACStress();
+
+//testJAC();
 
 function printNode(node: SortTreeNode<number>, depth = 0) {
     const indent = Array(depth).fill(' ').join('');
@@ -131,8 +134,46 @@ function testArrayTree() {
     tree.validate();
 }
 
+function testJAC() {
+    const jac = new JAC({maxPoints: 4}, 'v', 'x');
+
+    // if you only move neighbouring points, this
+    // would generate no error at all
+
+    jac.add({
+        v: 1,
+        x: 0,
+    });
+    
+    jac.add({
+        v: 1,
+        x: 5,
+    });
+    
+    jac.add({
+        v: 1,
+        x: 10,
+    });
+    
+    jac.add({
+        v: 1,
+        x: 15,
+    });
+    
+    console.log(jac.getData());
+    console.log(cloud.sumSelection(jac.cloud.ranges([,[2,12]]), 2));
+    
+    jac.add({
+        v: 1,
+        x: 20,
+    });
+    
+    console.log(jac.getData());
+    console.log(cloud.sumSelection(jac.cloud.ranges([,[2,12]]), 2));
+}
+
 function testJACStress() {
-    const cloud = new jac.JAC({maxPoints: 1000}, 'volume', 'x', 'y');
+    const jac = new JAC({maxPoints: 100}, 'volume', 'x', 'y');
 
     const sum: Record<string, number> = {};
 
@@ -144,11 +185,11 @@ function testJACStress() {
             y: Math.random(),
         };
 
-        cloud.add(obj);
+        jac.add(obj);
         add(sum, obj);
     }
 
-    for (const [i, d] of cloud.cloud.dimensions.entries()) {
+    for (const [i, d] of jac.cloud.dimensions.entries()) {
         console.log(`---- Dimension ${i} ----`);
         console.log(`Depth: ${d.tree.depth()}`)
         //console.log(`Data:`);
@@ -157,7 +198,7 @@ function testJACStress() {
 
     const sum2: Record<string, number> = {};
 
-    for (const p of cloud.getData()) {
+    for (const p of jac.getData()) {
         add(sum2, p);
     }
 

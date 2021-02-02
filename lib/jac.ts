@@ -40,6 +40,10 @@ export class JAC<D extends string> {
             arr[i] = data[dimensions[i]];
         }
 
+        if (arr[0] < 0) {
+            throw new Error("Volume can't be negative");
+        }
+
         return arr;
     }
     
